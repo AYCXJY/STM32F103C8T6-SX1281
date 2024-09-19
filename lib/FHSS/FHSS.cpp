@@ -1,6 +1,6 @@
 #include "FHSS.h"
-#include "logging.h"
-#include "options.h"
+// #include "logging.h"
+// #include "options.h"
 #include <string.h>
 
 #if defined(RADIO_SX127X) || defined(RADIO_LR1121)
@@ -74,14 +74,14 @@ uint16_t secondaryBandCount;
 
 void FHSSrandomiseFHSSsequence(const uint32_t seed)
 {
-    FHSSconfig = &domains[firmwareOptions.domain];
+    FHSSconfig = &domains[Regulatory_Domain_ISM_2400];
     sync_channel = (FHSSconfig->freq_count / 2) + 1;
     freq_spread = (FHSSconfig->freq_stop - FHSSconfig->freq_start) * FREQ_SPREAD_SCALE / (FHSSconfig->freq_count - 1);
     primaryBandCount = (FHSS_SEQUENCE_LEN / FHSSconfig->freq_count) * FHSSconfig->freq_count;
 
-    DBGLN("Setting %s Mode", FHSSconfig->domain);
-    DBGLN("Number of FHSS frequencies = %u", FHSSconfig->freq_count);
-    DBGLN("Sync channel = %u", sync_channel);
+    // DBGLN("Setting %s Mode", FHSSconfig->domain);
+    // DBGLN("Number of FHSS frequencies = %u", FHSSconfig->freq_count);
+    // DBGLN("Sync channel = %u", sync_channel);
 
     FHSSrandomiseFHSSsequenceBuild(seed, FHSSconfig->freq_count, sync_channel, FHSSsequence);
 
@@ -148,13 +148,13 @@ void FHSSrandomiseFHSSsequenceBuild(const uint32_t seed, uint32_t freqCount, uin
     }
 
     // output FHSS sequence
-    for (uint16_t i=0; i < FHSSgetSequenceCount(); i++)
-    {
-        DBG("%u ",inSequence[i]);
-        if (i % 10 == 9)
-            DBGCR;
-    }
-    DBGCR;
+    // for (uint16_t i=0; i < FHSSgetSequenceCount(); i++)
+    // {
+    //     DBG("%u ",inSequence[i]);
+    //     if (i % 10 == 9)
+    //         DBGCR;
+    // }
+    // DBGCR;
 }
 
 bool isDomain868()

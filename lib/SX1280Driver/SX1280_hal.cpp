@@ -20,7 +20,7 @@ Modified and adapted by Alessandro Carcione for ELRS project
 #include "SX1280_Regs.h"
 #include "SX1280_hal.h"
 #include <SPIEx.h>
-#include "logging.h"
+// #include "logging.h"
 
 SX1280Hal *SX1280Hal::instance = NULL;
 
@@ -43,7 +43,7 @@ void SX1280Hal::end()
 
 void SX1280Hal::init()
 {
-    DBGLN("Hal Init");
+    // DBGLN("Hal Init");
 
     if (GPIO_PIN_BUSY != UNDEF_PIN)
     {
@@ -83,7 +83,7 @@ void SX1280Hal::init()
     SPIEx.setDataMode(SPI_MODE0);
     SPIEx.setFrequency(17500000);
 #elif defined(PLATFORM_STM32)
-    DBGLN("Config SPI");
+    // DBGLN("Config SPI");
     SPIEx.setBitOrder(MSBFIRST);
     SPIEx.setDataMode(SPI_MODE0);
     SPIEx.setMOSI(GPIO_PIN_MOSI);
@@ -103,7 +103,7 @@ void SX1280Hal::init()
 
 void SX1280Hal::reset(void)
 {
-    DBGLN("SX1280 Reset");
+    // DBGLN("SX1280 Reset");
 
     if (GPIO_PIN_RST != UNDEF_PIN)
     {
@@ -127,7 +127,7 @@ void SX1280Hal::reset(void)
     WaitOnBusy(SX12XX_Radio_All);
 
     //this->BusyState = SX1280_NOT_BUSY;
-    DBGLN("SX1280 Ready!");
+    // DBGLN("SX1280 Ready!");
 }
 
 void ICACHE_RAM_ATTR SX1280Hal::WriteCommand(SX1280_RadioCommands_t command, uint8_t val, SX12XX_Radio_Number_t radioNumber, uint32_t busyDelay)
