@@ -4,68 +4,104 @@
 #include "common.h"
 #include "FHSS.h"
 
-// 定义无线电实例
-SX1280Driver Radio;
-
-// 定义发送数据
 uint8_t testdata[] = "HELLO!";
+// every X packets we hop to a new frequency. Max value of 16 since only 4 bits have been assigned in the sync package.
+uint8_t FHSShopInterval = 4;    
+uint8_t  i = 0;
 
-// 发送完成处理函数
 void ICACHE_RAM_ATTR TXdoneCallback()
 {
-    // 发送完数据翻转LED
-    digitalToggle(PC13);
-    // 输出信息到上位机串口
-    Serial.println("TXdoneCallback");
+  i++;
+  digitalToggle(PC13);
+
+  Serial.println("HELLO!");
+  Serial.println(FHSSgetCurrIndex());
+  Serial.println(FHSSgetChannelCount());
+  Serial.println(FHSSgetInitialFreq());
+  if(i % 4 == 0){Serial.println(FHSSgetNextFreq());}
+  Serial.println(FHSSgetSequenceCount());
+  Serial.println(FHSSgetRegulatoryDomain());
 }
 
-// 接受完成处理函数
 bool ICACHE_RAM_ATTR RXdoneCallback(SX12xxDriverCommon::rx_status const /*status*/)
 {
-    Serial.println("RXdoneCallback");
-    for (int i = 0; i < 8; i++)
-    {
-        Serial.print(Radio.RXdataBuffer[i], HEX);
-        Serial.print(",");
-    }
-    Serial.println("");
-    //Radio.RXnb();
-    return true;
+  Serial.println("RXdoneCallback");
+  for (int i = 0; i < 8; i++)
+  {
+      Serial.print(Radio.RXdataBuffer[i], HEX);
+      Serial.print(",");
+  }
+  Serial.println("");
+  Radio.RXnb();
+  return true;
 }
 
-// 初始化函数
+void SetRFLinkRate(uint8_t index) // Set speed of RF link
+{
+  expresslrs_mod_settings_s *const ModParams = get_elrs_airRateConfig(index);
+  expresslrs_rf_pref_params_s *const RFperf = get_elrs_RFperfParams(index);
+  // Binding always uses invertIQ
+  bool invertIQ = InBindingMode || (UID[5] & 0x01);
+
+  FHSSusePrimaryFreqBand = !(ModParams->radio_type == RADIO_TYPE_LR1121_LORA_2G4) && !(ModParams->radio_type == RADIO_TYPE_LR1121_GFSK_2G4);
+  FHSSuseDualBand = ModParams->radio_type == RADIO_TYPE_LR1121_LORA_DUAL;
+
+  Radio.Config(ModParams->bw, ModParams->sf, ModParams->cr, FHSSgetInitialFreq(), 
+              ModParams->PreambleLen, invertIQ, ModParams->PayloadLength, ModParams->interval, 
+              uidMacSeedGet(), 0, (ModParams->radio_type == RADIO_TYPE_SX128x_FLRC));
+
+
+  Radio.FuzzySNRThreshold = (RFperf->DynpowerSnrThreshUp == DYNPOWER_SNR_THRESH_NONE) ? 0 : (RFperf->DynpowerSnrThreshUp - RFperf->DynpowerSnrThreshDn);
+
+  // InitialFreq has been set, so lets also reset the FHSS Idx and Nonce.
+  FHSSsetCurrIndex(0);
+
+  ExpressLRS_currAirRate_Modparams = ModParams;
+  ExpressLRS_currAirRate_RFperfParams = RFperf;
+
+}
+
 void setup()
 {
-    // 串口初始化
-    Serial.begin(115200);
-    Serial.println("Begin SX1280 testing...");
+  Serial.begin(115200);
+  Serial.println("Begin SX1280 testing...");
+  pinMode(PC13, OUTPUT);
 
-    // 初始化LED
-    pinMode(PC13, OUTPUT);
+    // 配置GPIO引脚模式
+  pinMode(GPIO_PIN_NSS, OUTPUT);
+  pinMode(GPIO_PIN_MOSI, OUTPUT);
+  pinMode(GPIO_PIN_MISO, INPUT);
+  pinMode(GPIO_PIN_SCK, OUTPUT);
 
-    // 初始化无线电
-    Radio.Begin(FHSSgetMinimumFreq(), FHSSgetMaximumFreq());
-    //Radio.Config(SX1280_LORA_BW_0800, SX1280_LORA_SF6, SX1280_LORA_CR_4_7, 2420000000, SX1280_PREAMBLE_LENGTH_32_BITS);
-    Radio.TXdoneCallback = &TXdoneCallback;
-    Radio.RXdoneCallback = &RXdoneCallback;
-    Radio.SetFrequencyReg(FHSSgetInitialFreq());
-    //Radio.RXnb();
-    // Radio.TXnb(testdata, sizeof(testdata), SX12XX_Radio_1);
+  pinMode(GPIO_PIN_DIO1, INPUT);
+  pinMode(GPIO_PIN_RST, OUTPUT);
+  pinMode(GPIO_PIN_BUSY, INPUT);
+
+  pinMode(GPIO_PIN_RCSIGNAL_RX, INPUT);
+  pinMode(GPIO_PIN_RCSIGNAL_TX, OUTPUT);
+
+  pinMode(GPIO_PIN_LED_RED, OUTPUT);
+
+  FHSSrandomiseFHSSsequence(uidMacSeedGet());
+  Radio.TXdoneCallback = &TXdoneCallback;
+  Radio.RXdoneCallback = &RXdoneCallback;
+
+  // Radio.SetFrequencyReg(FHSSgetInitialFreq());
+
+  Radio.currFreq = FHSSgetInitialFreq(); //set frequency first or an error will occur!!!
+
+  Radio.Begin(FHSSgetMinimumFreq(), FHSSgetMaximumFreq());
+
+  SetRFLinkRate(enumRatetoIndex(RATE_BINDING));
+
+  Radio.TXnb(testdata, sizeof(testdata), SX12XX_Radio_All);
 }
 
 // 主循环
 void loop()
 {
-    // Serial.println("about to TX");
-    Radio.TXnb(testdata, sizeof(testdata), SX12XX_Radio_1);
-    delay(1000);
-
-    // Serial.println("about to RX");
-    //Radio.RXnb();
-    // delay(100);
-    //delay(random(50,200));
-    //delay(100);
-    //Radio.GetStatus();
-
-    yield();
+  delay(500);
+  Radio.TXnb(testdata, sizeof(testdata), SX12XX_Radio_All);
+  // Radio.RXnb();
+  yield();
 }
