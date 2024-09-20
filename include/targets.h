@@ -17,7 +17,7 @@
 
 #define GPIO_PIN_DIO1        PA10
 #define GPIO_PIN_RST         PB4
-#define GPIO_PIN_BUSY        PA11
+#define GPIO_PIN_BUSY        PC15
 
 #define GPIO_PIN_RCSIGNAL_RX PB7  // USART1, AFAIO
 #define GPIO_PIN_RCSIGNAL_TX PB6  // USART1, AFAIO
