@@ -4,6 +4,9 @@
 #include "common.h"
 #include "FHSS.h"
 
+bool InBindingMode = false;
+volatile bool busyTransmitting;
+
 // #define TX
 #define RX
 
@@ -111,29 +114,17 @@ void loop()
   yield();
 }
 #endif
+/******************************************* */
 
 
-
-
+/*************************************** */
 #if defined(RX)
-
-uint8_t testdata[] = "HELLO!";
-// every X packets we hop to a new frequency. Max value of 16 since only 4 bits have been assigned in the sync package.
 uint8_t FHSShopInterval = 4;    
 uint8_t  i = 0;
 
 void ICACHE_RAM_ATTR TXdoneCallback()
 {
-  i++;
-  digitalToggle(PC13);
 
-  Serial.println("HELLO!");
-  Serial.println(FHSSgetCurrIndex());
-  Serial.println(FHSSgetChannelCount());
-  Serial.println(FHSSgetInitialFreq());
-  if(i % 4 == 0){Serial.println(FHSSgetNextFreq());}
-  Serial.println(FHSSgetSequenceCount());
-  Serial.println(FHSSgetRegulatoryDomain());
 }
 
 bool ICACHE_RAM_ATTR RXdoneCallback(SX12xxDriverCommon::rx_status const /*status*/)
@@ -207,15 +198,13 @@ void setup()
 
   SetRFLinkRate(enumRatetoIndex(RATE_BINDING));
 
-  Radio.TXnb(testdata, sizeof(testdata), SX12XX_Radio_All);
+  Radio.RXnb();
 }
 
 // 主循环
 void loop()
 {
-  delay(500);
-  Radio.TXnb(testdata, sizeof(testdata), SX12XX_Radio_All);
-  // Radio.RXnb();
+
   yield();
 }
 #endif
