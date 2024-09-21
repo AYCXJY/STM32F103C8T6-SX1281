@@ -44,7 +44,7 @@ void SetRFLinkRate(uint8_t index)
   Radio.FuzzySNRThreshold = (RFperf->DynpowerSnrThreshUp == DYNPOWER_SNR_THRESH_NONE) ? 0 : (RFperf->DynpowerSnrThreshUp - RFperf->DynpowerSnrThreshDn);
 
   // InitialFreq has been set, so lets also reset the FHSS Idx and Nonce.
-  FHSSsetCurrIndex(41);
+  FHSSsetCurrIndex(0);
 
   ExpressLRS_currAirRate_Modparams = ModParams;
   ExpressLRS_currAirRate_RFperfParams = RFperf;
@@ -65,7 +65,7 @@ void setup()
 
   Radio.Begin(FHSSgetMinimumFreq(), FHSSgetMaximumFreq());
 
-  SetRFLinkRate(enumRatetoIndex(RATE_LORA_500HZ));
+  SetRFLinkRate(enumRatetoIndex(RATE_BINDING));
 
   Radio.RXnb();
 }

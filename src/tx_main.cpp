@@ -47,7 +47,7 @@ void SetRFLinkRate(uint8_t index)
                             (RFperf->DynpowerSnrThreshUp - RFperf->DynpowerSnrThreshDn);
 
   // InitialFreq has been set, so lets also reset the FHSS Idx and Nonce.
-  FHSSsetCurrIndex(41);
+  FHSSsetCurrIndex(0);
 
   ExpressLRS_currAirRate_Modparams = ModParams;
   ExpressLRS_currAirRate_RFperfParams = RFperf;
@@ -65,9 +65,11 @@ void setup()
 
   Radio.currFreq = FHSSgetInitialFreq(); 
 
-  Radio.Begin(FHSSgetMinimumFreq(), FHSSgetMaximumFreq());
+  bool init_success;
+  init_success = Radio.Begin(FHSSgetMinimumFreq(), FHSSgetMaximumFreq());
+  if(!init_success){Serial.println("Radio.Begin failed!");}
 
-  SetRFLinkRate(enumRatetoIndex(RATE_LORA_500HZ));
+  SetRFLinkRate(enumRatetoIndex(RATE_BINDING));
 
   Radio.TXnb(testdata, sizeof(testdata), SX12XX_Radio_All);
 }
