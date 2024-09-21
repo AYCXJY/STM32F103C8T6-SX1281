@@ -21,11 +21,11 @@ void ICACHE_RAM_ATTR TXdoneCallback()
 
   digitalToggle(PC13);
 
-  Serial.println("Current Index:" + String(FHSSgetCurrIndex()));
-  Serial.println("Channel Count:" + String(FHSSgetChannelCount()));
-  Serial.println("Initial Freq:" + String(FHSSgetInitialFreq()));
-  Serial.println("Sequense Count:" + String(FHSSgetSequenceCount()));
-  Serial.println("Regulatory Domain:" + String(FHSSgetRegulatoryDomain()));
+  // Serial.println("Current Index:" + String(FHSSgetCurrIndex()));
+  // Serial.println("Channel Count:" + String(FHSSgetChannelCount()));
+  // Serial.println("Initial Freq:" + String(FHSSgetInitialFreq()));
+  // Serial.println("Sequense Count:" + String(FHSSgetSequenceCount()));
+  // Serial.println("Regulatory Domain:" + String(FHSSgetRegulatoryDomain()));
 
   // if (!busyTransmitting)
   // {
@@ -97,12 +97,14 @@ void setup()
   Radio.TXnb(testdata, sizeof(testdata), SX12XX_Radio_All);
 }
 
+bool busy;
+
 void loop()
 {
   Radio.TXnb(testdata, sizeof(testdata), SX12XX_Radio_All);
 
-  delay(500);
-
+  delay(100);
+  busy = digitalRead(GPIO_PIN_BUSY);
   yield();
 }
 
