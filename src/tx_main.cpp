@@ -92,7 +92,7 @@ void setup()
 
   Radio.Begin(FHSSgetMinimumFreq(), FHSSgetMaximumFreq());
 
-  SetRFLinkRate(enumRatetoIndex(RATE_BINDING));
+  SetRFLinkRate(enumRatetoIndex(RATE_LORA_500HZ));
 
   Radio.TXnb(testdata, sizeof(testdata), SX12XX_Radio_All);
 }

@@ -61,13 +61,11 @@ void setup()
   Radio.TXdoneCallback = &TXdoneCallback;
   Radio.RXdoneCallback = &RXdoneCallback;
 
-  // Radio.SetFrequencyReg(FHSSgetInitialFreq());
-
   Radio.currFreq = FHSSgetInitialFreq(); //set frequency first or an error will occur!!!
 
   Radio.Begin(FHSSgetMinimumFreq(), FHSSgetMaximumFreq());
 
-  SetRFLinkRate(enumRatetoIndex(RATE_BINDING));
+  SetRFLinkRate(enumRatetoIndex(RATE_LORA_500HZ));
 
   Radio.RXnb();
 }
