@@ -16,8 +16,8 @@ uint8_t  IntervalCount = 0;
 
 void ICACHE_RAM_ATTR TXdoneCallback()
 {
-  IntervalCount++;
-  if(IntervalCount % 4 == 0){Serial.println(FHSSgetNextFreq());}
+  // IntervalCount++;
+  // if(IntervalCount % 4 == 0){Serial.println(FHSSgetNextFreq());}
 
   digitalToggle(PC13);
 
@@ -27,26 +27,26 @@ void ICACHE_RAM_ATTR TXdoneCallback()
   Serial.println("Sequense Count:" + String(FHSSgetSequenceCount()));
   Serial.println("Regulatory Domain:" + String(FHSSgetRegulatoryDomain()));
 
-  if (!busyTransmitting)
-  {
-    return; // Already finished transmission and do not call HandleFHSS() a second time, which may hop the frequency!
-  }
-  // if (connectionState != awaitingModelId)
+  // if (!busyTransmitting)
   // {
-  //   HandleFHSS();
-  //   HandlePrepareForTLM();
-  //   #if defined(Regulatory_Domain_EU_CE_2400)
-  //   if (TelemetryRcvPhase != ttrpPreReceiveGap)
-  //   {
-  //   // Start RX for Listen Before Talk early because it takes about 100us
-  //   // from RX enable to valid instant RSSI values are returned.
-  //   // If rx was already started by TLM prepare above, this call will let RX
-  //   // continue as normal.
-  //   SetClearChannelAssessmentTime();
-  //   }
-  //   #endif // non-CE
+  //   return; // Already finished transmission and do not call HandleFHSS() a second time, which may hop the frequency!
   // }
-  busyTransmitting = false;
+  // // if (connectionState != awaitingModelId)
+  // // {
+  // //   HandleFHSS();
+  // //   HandlePrepareForTLM();
+  // //   #if defined(Regulatory_Domain_EU_CE_2400)
+  // //   if (TelemetryRcvPhase != ttrpPreReceiveGap)
+  // //   {
+  // //   // Start RX for Listen Before Talk early because it takes about 100us
+  // //   // from RX enable to valid instant RSSI values are returned.
+  // //   // If rx was already started by TLM prepare above, this call will let RX
+  // //   // continue as normal.
+  // //   SetClearChannelAssessmentTime();
+  // //   }
+  // //   #endif // non-CE
+  // // }
+  // busyTransmitting = false;
 }
 
 bool ICACHE_RAM_ATTR RXdoneCallback(SX12xxDriverCommon::rx_status const /*status*/)
@@ -83,21 +83,6 @@ void setup()
 {
   Serial.begin(115200);
   pinMode(PC13, OUTPUT);
-
-  // 配置GPIO引脚模式
-  pinMode(GPIO_PIN_NSS, OUTPUT);
-  pinMode(GPIO_PIN_MOSI, OUTPUT);
-  pinMode(GPIO_PIN_MISO, INPUT);
-  pinMode(GPIO_PIN_SCK, OUTPUT);
-
-  pinMode(GPIO_PIN_DIO1, INPUT);
-  pinMode(GPIO_PIN_RST, OUTPUT);
-  pinMode(GPIO_PIN_BUSY, INPUT);
-
-  pinMode(GPIO_PIN_RCSIGNAL_RX, INPUT);
-  pinMode(GPIO_PIN_RCSIGNAL_TX, OUTPUT);
-
-  pinMode(GPIO_PIN_LED_RED, OUTPUT);
 
   FHSSrandomiseFHSSsequence(uidMacSeedGet());
   Radio.TXdoneCallback = &TXdoneCallback;

@@ -4,11 +4,9 @@
 #include "common.h"
 #include "FHSS.h"
 
-// bool InBindingMode = false;
-// volatile bool busyTransmitting;
-
 uint8_t FHSShopInterval = 4;    
-uint8_t  i = 0;
+
+uint8_t  IntervalCount = 0;uint8_t  i = 0;
 
 void ICACHE_RAM_ATTR TXdoneCallback()
 {
@@ -23,12 +21,11 @@ bool ICACHE_RAM_ATTR RXdoneCallback(SX12xxDriverCommon::rx_status const /*status
       Serial.print(Radio.RXdataBuffer[i], HEX);
       Serial.print(",");
   }
-  Serial.println("");
-  Radio.RXnb();
   return true;
+  Radio.RXnb();
 }
 
-void SetRFLinkRate(uint8_t index) // Set speed of RF link
+void SetRFLinkRate(uint8_t index) 
 {
   expresslrs_mod_settings_s *const ModParams = get_elrs_airRateConfig(index);
   expresslrs_rf_pref_params_s *const RFperf = get_elrs_RFperfParams(index);
@@ -59,21 +56,6 @@ void setup()
   Serial.println("Begin SX1280 testing...");
   pinMode(PC13, OUTPUT);
 
-    // 配置GPIO引脚模式
-  pinMode(GPIO_PIN_NSS, OUTPUT);
-  pinMode(GPIO_PIN_MOSI, OUTPUT);
-  pinMode(GPIO_PIN_MISO, INPUT);
-  pinMode(GPIO_PIN_SCK, OUTPUT);
-
-  pinMode(GPIO_PIN_DIO1, INPUT);
-  pinMode(GPIO_PIN_RST, OUTPUT);
-  pinMode(GPIO_PIN_BUSY, INPUT);
-
-  pinMode(GPIO_PIN_RCSIGNAL_RX, INPUT);
-  pinMode(GPIO_PIN_RCSIGNAL_TX, OUTPUT);
-
-  pinMode(GPIO_PIN_LED_RED, OUTPUT);
-
   FHSSrandomiseFHSSsequence(uidMacSeedGet());
   Radio.TXdoneCallback = &TXdoneCallback;
   Radio.RXdoneCallback = &RXdoneCallback;
@@ -92,6 +74,16 @@ void setup()
 // 主循环
 void loop()
 {
-
+  digitalWrite(PC13, HIGH);
+  delay(500);
+  digitalWrite(PC13, LOW);
+  // Serial.println("Current Index:" + String(FHSSgetCurrIndex()));
+  // Serial.println("Channel Count:" + String(FHSSgetChannelCount()));
+  // Serial.println("Initial Freq:" + String(FHSSgetInitialFreq()));
+  // Serial.println("Sequense Count:" + String(FHSSgetSequenceCount()));
+  // Serial.println("Regulatory Domain:" + String(FHSSgetRegulatoryDomain()));
+  // Serial.println("Regulatory Domain:" + String(FHSSonSyncChannel()));
+  // Radio.GetStatus(SX12XX_Radio_All);
+  delay(500);
   yield();
 }
