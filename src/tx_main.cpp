@@ -76,12 +76,16 @@ void setup()
 
 bool busy;
 
+
 void loop()
 {
   Radio.TXnb(testdata, sizeof(testdata), SX12XX_Radio_All);
-
   delay(100);
+
   busy = digitalRead(GPIO_PIN_BUSY);
+  Serial.println(Radio.GetRssiInst(SX12XX_Radio_All));
+  Radio.GetStatus(SX12XX_Radio_All);
+
   yield();
 }
 
