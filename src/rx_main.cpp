@@ -15,14 +15,15 @@ void ICACHE_RAM_ATTR TXdoneCallback()
 
 bool ICACHE_RAM_ATTR RXdoneCallback(SX12xxDriverCommon::rx_status const /*status*/)
 {
+  digitalToggle(PC13);
   Serial.println("RXdoneCallback");
   for (int i = 0; i < 8; i++)
   {
       Serial.print(Radio.RXdataBuffer[i], HEX);
       Serial.print(",");
   }
-  return true;
   Radio.RXnb();
+  return true;
 }
 
 void SetRFLinkRate(uint8_t index) 
@@ -71,19 +72,21 @@ void setup()
   Radio.RXnb();
 }
 
+bool busy;
 // 主循环
 void loop()
 {
-  digitalWrite(PC13, HIGH);
-  delay(500);
-  digitalWrite(PC13, LOW);
-  // Serial.println("Current Index:" + String(FHSSgetCurrIndex()));
-  // Serial.println("Channel Count:" + String(FHSSgetChannelCount()));
-  // Serial.println("Initial Freq:" + String(FHSSgetInitialFreq()));
-  // Serial.println("Sequense Count:" + String(FHSSgetSequenceCount()));
-  // Serial.println("Regulatory Domain:" + String(FHSSgetRegulatoryDomain()));
-  // Serial.println("Regulatory Domain:" + String(FHSSonSyncChannel()));
-  // Radio.GetStatus(SX12XX_Radio_All);
-  delay(500);
+  // digitalWrite(PC13, HIGH);
+  // delay(500);
+  // digitalWrite(PC13, LOW);
+  // // Serial.println("Current Index:" + String(FHSSgetCurrIndex()));
+  // // Serial.println("Channel Count:" + String(FHSSgetChannelCount()));
+  // // Serial.println("Initial Freq:" + String(FHSSgetInitialFreq()));
+  // // Serial.println("Sequense Count:" + String(FHSSgetSequenceCount()));
+  // // Serial.println("Regulatory Domain:" + String(FHSSgetRegulatoryDomain()));
+  // // Serial.println("Regulatory Domain:" + String(FHSSonSyncChannel()));
+  // // Radio.GetStatus(SX12XX_Radio_All);
+  // delay(500);
+  busy = digitalRead(GPIO_PIN_BUSY);
   yield();
 }
