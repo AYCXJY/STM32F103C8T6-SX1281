@@ -3,12 +3,6 @@
 #include <Arduino.h>
 #endif
 
-
-/*开发板引脚定义*/
-#ifndef DEVICE_NAME
-#define DEVICE_NAME "ELRS 2400RX"
-#endif
-
 // GPIO pin definitions
 #define GPIO_PIN_NSS         PA4
 #define GPIO_PIN_MOSI        PA7
@@ -19,10 +13,10 @@
 #define GPIO_PIN_RST         PB4
 #define GPIO_PIN_BUSY        PC15
 
-#define GPIO_PIN_RCSIGNAL_RX PB7  // USART1, AFAIO
-#define GPIO_PIN_RCSIGNAL_TX PB6  // USART1, AFAIO
+// #define GPIO_PIN_RCSIGNAL_RX PB7  // USART1, AFAIO
+// #define GPIO_PIN_RCSIGNAL_TX PB6  // USART1, AFAIO
 
-#define GPIO_PIN_LED_RED     PB5
+// #define GPIO_PIN_LED_RED     PB5
 
 // Output Power - use default SX1280
 

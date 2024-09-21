@@ -4,8 +4,6 @@
 #include "common.h"
 #include "FHSS.h"
 
-volatile bool busyTransmitting;
-
 uint8_t testdata[] = "HELLO!";
 
 // every X packets we hop to a new frequency. 
@@ -21,32 +19,7 @@ void ICACHE_RAM_ATTR TXdoneCallback()
 
   digitalToggle(PC13);
 
-  // Serial.println("Current Index:" + String(FHSSgetCurrIndex()));
-  // Serial.println("Channel Count:" + String(FHSSgetChannelCount()));
-  // Serial.println("Initial Freq:" + String(FHSSgetInitialFreq()));
-  // Serial.println("Sequense Count:" + String(FHSSgetSequenceCount()));
-  // Serial.println("Regulatory Domain:" + String(FHSSgetRegulatoryDomain()));
-
-  // if (!busyTransmitting)
-  // {
-  //   return; // Already finished transmission and do not call HandleFHSS() a second time, which may hop the frequency!
-  // }
-  // // if (connectionState != awaitingModelId)
-  // // {
-  // //   HandleFHSS();
-  // //   HandlePrepareForTLM();
-  // //   #if defined(Regulatory_Domain_EU_CE_2400)
-  // //   if (TelemetryRcvPhase != ttrpPreReceiveGap)
-  // //   {
-  // //   // Start RX for Listen Before Talk early because it takes about 100us
-  // //   // from RX enable to valid instant RSSI values are returned.
-  // //   // If rx was already started by TLM prepare above, this call will let RX
-  // //   // continue as normal.
-  // //   SetClearChannelAssessmentTime();
-  // //   }
-  // //   #endif // non-CE
-  // // }
-  // busyTransmitting = false;
+  Serial.println("Current Index = " + String(FHSSgetCurrIndex()));
 }
 
 bool ICACHE_RAM_ATTR RXdoneCallback(SX12xxDriverCommon::rx_status const /*status*/)
@@ -58,10 +31,11 @@ void SetRFLinkRate(uint8_t index)
 {
   expresslrs_mod_settings_s *const ModParams = get_elrs_airRateConfig(index);
   expresslrs_rf_pref_params_s *const RFperf = get_elrs_RFperfParams(index);
-  // Binding always uses invertIQ
+
   bool invertIQ = InBindingMode || (UID[5] & 0x01);
 
-  FHSSusePrimaryFreqBand = !(ModParams->radio_type == RADIO_TYPE_LR1121_LORA_2G4) && !(ModParams->radio_type == RADIO_TYPE_LR1121_GFSK_2G4);
+  FHSSusePrimaryFreqBand = !(ModParams->radio_type == RADIO_TYPE_LR1121_LORA_2G4) && 
+                            !(ModParams->radio_type == RADIO_TYPE_LR1121_GFSK_2G4);
   FHSSuseDualBand = ModParams->radio_type == RADIO_TYPE_LR1121_LORA_DUAL;
 
   Radio.Config(ModParams->bw, ModParams->sf, ModParams->cr, FHSSgetInitialFreq(), 
@@ -69,10 +43,11 @@ void SetRFLinkRate(uint8_t index)
               uidMacSeedGet(), 0, (ModParams->radio_type == RADIO_TYPE_SX128x_FLRC));
 
 
-  Radio.FuzzySNRThreshold = (RFperf->DynpowerSnrThreshUp == DYNPOWER_SNR_THRESH_NONE) ? 0 : (RFperf->DynpowerSnrThreshUp - RFperf->DynpowerSnrThreshDn);
+  Radio.FuzzySNRThreshold = (RFperf->DynpowerSnrThreshUp == DYNPOWER_SNR_THRESH_NONE) ? 0 : 
+                            (RFperf->DynpowerSnrThreshUp - RFperf->DynpowerSnrThreshDn);
 
   // InitialFreq has been set, so lets also reset the FHSS Idx and Nonce.
-  FHSSsetCurrIndex(0);
+  FHSSsetCurrIndex(41);
 
   ExpressLRS_currAirRate_Modparams = ModParams;
   ExpressLRS_currAirRate_RFperfParams = RFperf;

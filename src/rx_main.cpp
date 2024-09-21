@@ -10,7 +10,7 @@ uint8_t  IntervalCount = 0;uint8_t  i = 0;
 
 void ICACHE_RAM_ATTR TXdoneCallback()
 {
-
+  Serial.print("txcallback");
 }
 
 bool ICACHE_RAM_ATTR RXdoneCallback(SX12xxDriverCommon::rx_status const /*status*/)
@@ -44,7 +44,7 @@ void SetRFLinkRate(uint8_t index)
   Radio.FuzzySNRThreshold = (RFperf->DynpowerSnrThreshUp == DYNPOWER_SNR_THRESH_NONE) ? 0 : (RFperf->DynpowerSnrThreshUp - RFperf->DynpowerSnrThreshDn);
 
   // InitialFreq has been set, so lets also reset the FHSS Idx and Nonce.
-  FHSSsetCurrIndex(0);
+  FHSSsetCurrIndex(41);
 
   ExpressLRS_currAirRate_Modparams = ModParams;
   ExpressLRS_currAirRate_RFperfParams = RFperf;
@@ -74,16 +74,10 @@ bool busy;
 // 主循环
 void loop()
 {
+  Serial.println("Current Index = " + String(FHSSgetCurrIndex()));
   // digitalWrite(PC13, HIGH);
-  // delay(500);
+  delay(500);
   // digitalWrite(PC13, LOW);
-  // // Serial.println("Current Index:" + String(FHSSgetCurrIndex()));
-  // // Serial.println("Channel Count:" + String(FHSSgetChannelCount()));
-  // // Serial.println("Initial Freq:" + String(FHSSgetInitialFreq()));
-  // // Serial.println("Sequense Count:" + String(FHSSgetSequenceCount()));
-  // // Serial.println("Regulatory Domain:" + String(FHSSgetRegulatoryDomain()));
-  // // Serial.println("Regulatory Domain:" + String(FHSSonSyncChannel()));
-  // // Radio.GetStatus(SX12XX_Radio_All);
   // delay(500);
   busy = digitalRead(GPIO_PIN_BUSY);
   yield();
