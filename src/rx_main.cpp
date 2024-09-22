@@ -4,10 +4,17 @@
 #include "common.h"
 #include "FHSS.h"
 
-uint8_t FHSShopInterval = 4;    
-uint8_t IntervalCount = 0;
+// uint8_t FHSShopInterval = 4;    
+// uint8_t IntervalCount = 0;
 
-void ICACHE_RAM_ATTR TXdoneCallback(){}
+void ICACHE_RAM_ATTR TXdoneCallback()
+{
+  // IntervalCount++;
+  // if(IntervalCount % FHSShopInterval == 0)
+  // {
+  //   Serial.println(FHSSgetNextFreq());
+  // }
+}
 
 bool ICACHE_RAM_ATTR RXdoneCallback(SX12xxDriverCommon::rx_status const /*status*/)
 {
@@ -20,10 +27,8 @@ bool ICACHE_RAM_ATTR RXdoneCallback(SX12xxDriverCommon::rx_status const /*status
   }
   Serial.println("");
 
-  // 打印状态信息
-  Serial.println("RSSI = " + Radio.GetRssiInst(SX12XX_Radio_1));
-  Radio.GetStatus(SX12XX_Radio_1);
-
+  // 发送应答包
+  // Radio.TXnb()
   return true;
 }
 
@@ -67,5 +72,14 @@ void setup()
 
 void loop()
 {
+  // 打印状态信息
+  Radio.GetStatus(SX12XX_Radio_1);
+  Serial.println(Radio.GetRssiInst(SX12XX_Radio_1));
+  // Serial.println("Initial Freq = " + String(FHSSgetInitialFreq()));
+  // Serial.println("Sequense Count = " + String(FHSSgetSequenceCount()));
+  // Serial.println("Current Index = " + String(FHSSgetCurrIndex()));
+  // Serial.println("Channel Count = " + String(FHSSgetChannelCount()));
 
+  delay(500);
+  yield();
 }
