@@ -16,13 +16,11 @@ void ICACHE_RAM_ATTR TXdoneCallback()
 bool ICACHE_RAM_ATTR RXdoneCallback(SX12xxDriverCommon::rx_status const /*status*/)
 {
   digitalToggle(PC13);
-  Serial.println("RXdoneCallback");
-  for (int i = 0; i < 8; i++)
+  for (int i = 0; i < 16; i++)
   {
-      Serial.print(Radio.RXdataBuffer[i], HEX);
-      Serial.print(",");
+      Serial.print((char)Radio.RXdataBuffer[i]);
   }
-  // Radio.RXnb();
+  Serial.println("");
   return true;
 }
 
