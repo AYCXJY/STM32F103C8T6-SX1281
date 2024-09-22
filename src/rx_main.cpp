@@ -22,7 +22,7 @@ bool ICACHE_RAM_ATTR RXdoneCallback(SX12xxDriverCommon::rx_status const /*status
       Serial.print(Radio.RXdataBuffer[i], HEX);
       Serial.print(",");
   }
-  Radio.RXnb();
+  // Radio.RXnb();
   return true;
 }
 
@@ -56,6 +56,8 @@ void setup()
   Serial.begin(115200);
   Serial.println("Begin SX1280 testing...");
   pinMode(PC13, OUTPUT);
+  pinMode(GPIO_PIN_TX_EN, OUTPUT);
+  pinMode(GPIO_PIN_RX_EN, OUTPUT);
 
   FHSSrandomiseFHSSsequence(uidMacSeedGet());
   Radio.TXdoneCallback = &TXdoneCallback;
@@ -69,17 +71,17 @@ void setup()
 
   SetRFLinkRate(9);
 
-  Radio.RXnb();
+  Radio.RXnb(SX1280_MODE_RX_CONT);
 }
 
-bool busy;
+// bool busy;
 void loop()
 {
   Serial.println("Current Index = " + String(FHSSgetCurrIndex()));
-  Serial.println(Radio.GetRssiInst(SX12XX_Radio_All));
-  Radio.GetStatus(SX12XX_Radio_All);
+  Serial.println(Radio.GetRssiInst(SX12XX_Radio_1));
+  Radio.GetStatus(SX12XX_Radio_1);
   
-  busy = digitalRead(GPIO_PIN_BUSY);
+  // busy = digitalRead(GPIO_PIN_BUSY);
 
   delay(500);
   yield();

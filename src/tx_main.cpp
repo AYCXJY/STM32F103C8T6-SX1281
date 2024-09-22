@@ -55,6 +55,9 @@ void setup()
 {
   Serial.begin(115200);
   pinMode(PC13, OUTPUT);
+  pinMode(GPIO_PIN_TX_EN, OUTPUT);
+  pinMode(GPIO_PIN_RX_EN, OUTPUT);
+
 
   FHSSrandomiseFHSSsequence(uidMacSeedGet());
   Radio.TXdoneCallback = &TXdoneCallback;
@@ -68,7 +71,7 @@ void setup()
 
   SetRFLinkRate(9);
 
-  Radio.TXnb(testdata, sizeof(testdata), SX12XX_Radio_All);
+  // Radio.TXnb(testdata, sizeof(testdata), SX12XX_Radio_1);
 }
 
 bool busy;
@@ -76,13 +79,13 @@ bool busy;
 
 void loop()
 {
-  Radio.TXnb(testdata, sizeof(testdata), SX12XX_Radio_All);
-  delay(1000);
+  Radio.TXnb(testdata, sizeof(testdata), SX12XX_Radio_1);
 
   busy = digitalRead(GPIO_PIN_BUSY);
-  Serial.println(Radio.GetRssiInst(SX12XX_Radio_All));
-  Radio.GetStatus(SX12XX_Radio_All);
+  Serial.println(Radio.GetRssiInst(SX12XX_Radio_1));
+  Radio.GetStatus(SX12XX_Radio_1);
 
+  delay(1000);
   yield();
 }
 
