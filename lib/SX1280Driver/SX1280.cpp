@@ -114,33 +114,33 @@ bool SX1280Driver::Begin(uint32_t minimumFrequency, uint32_t maximumFrequency)
         hal.WriteRegister(0x0891, (hal.ReadRegister(0x0891, SX12XX_Radio_2) | 0xC0), SX12XX_Radio_2);   //default is low power mode, switch to high sensitivity instead
     }
 
-#if defined(TARGET_RX)
-    fallBackMode = SX1280_MODE_FS;
-    hal.WriteCommand(SX1280_RADIO_SET_AUTOFS, 0x01, SX12XX_Radio_All); //Enable auto FS
-#else
-/*
-Do not enable for dual radio TX.
-When SX1280_RADIO_SET_AUTOFS is set and tlm received by only 1 of the 2 radios,  that radio will go into FS mode and the other
-into Standby mode.  After the following SPI command for tx mode, busy will go high for differing periods of time because 1 is
-transitioning from FS mode and the other from Standby mode. This causes the tx done dio of the 2 radios to occur at very different times.
-*/
-    if (GPIO_PIN_NSS_2 == UNDEF_PIN)
-    {
-        fallBackMode = SX1280_MODE_FS;
-        hal.WriteCommand(SX1280_RADIO_SET_AUTOFS, 0x01, SX12XX_Radio_All); //Enable auto FS
-    }
-#endif
+// #if defined(TARGET_RX)
+//     fallBackMode = SX1280_MODE_FS;
+//     hal.WriteCommand(SX1280_RADIO_SET_AUTOFS, 0x01, SX12XX_Radio_All); //Enable auto FS
+// #else
+// /*
+// Do not enable for dual radio TX.
+// When SX1280_RADIO_SET_AUTOFS is set and tlm received by only 1 of the 2 radios,  that radio will go into FS mode and the other
+// into Standby mode.  After the following SPI command for tx mode, busy will go high for differing periods of time because 1 is
+// transitioning from FS mode and the other from Standby mode. This causes the tx done dio of the 2 radios to occur at very different times.
+// */
+//     if (GPIO_PIN_NSS_2 == UNDEF_PIN)
+//     {
+//         fallBackMode = SX1280_MODE_FS;
+//         hal.WriteCommand(SX1280_RADIO_SET_AUTOFS, 0x01, SX12XX_Radio_All); //Enable auto FS
+//     }
+// #endif
 
     // Force the next power update, and the lowest power
     pwrCurrent = PWRPENDING_NONE;
     SetOutputPower(SX1280_POWER_MIN);
     CommitOutputPower();
-#if defined(USE_HARDWARE_DCDC)
-    if (OPT_USE_HARDWARE_DCDC)
-    {
-        hal.WriteCommand(SX1280_RADIO_SET_REGULATORMODE, SX1280_USE_DCDC, SX12XX_Radio_All);        // Enable DCDC converter instead of LDO
-    }
-#endif
+// #if defined(USE_HARDWARE_DCDC)
+//     if (OPT_USE_HARDWARE_DCDC)
+//     {
+//         hal.WriteCommand(SX1280_RADIO_SET_REGULATORMODE, SX1280_USE_DCDC, SX12XX_Radio_All);        // Enable DCDC converter instead of LDO
+//     }
+// #endif
 
     return true;
 }
