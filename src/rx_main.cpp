@@ -6,7 +6,7 @@
 
 uint8_t FHSShopInterval = 4;    
 uint8_t IntervalCount = 0;
-uint8_t ACK = 0xAA;
+uint8_t ACK = 0x00;
 uint8_t packetSize = 6;
 
 // TX 中断回调函数
@@ -16,9 +16,11 @@ void ICACHE_RAM_ATTR TXdoneCallback()
   Radio.RXnb(SX1280_MODE_RX_CONT);
   // 计算跳频
   IntervalCount++;
+  ACK++;
   if(IntervalCount % FHSShopInterval == 0)
   {
-    Serial.println(FHSSgetNextFreq());
+    IntervalCount = 0;
+    Radio.SetFrequencyReg(FHSSgetNextFreq());
   }
 }
 // RX 中断回调函数

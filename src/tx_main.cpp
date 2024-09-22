@@ -8,13 +8,14 @@ uint8_t data[] = "HELLO!";
 
 uint8_t FHSShopInterval = 4;    
 uint8_t IntervalCount = 0;
-uint8_t ACK = 0xAA;
+uint8_t ACK = 0x00;
 // bool waitingACK = false;
 // uint8_t missedPacket = 0;
 
 
 // TX 中断回调函数
-void ICACHE_RAM_ATTR TXdoneCallback(){
+void ICACHE_RAM_ATTR TXdoneCallback()
+{
   // 发送完数据翻转LED
   digitalToggle(PC13);
   // 等待ACK
@@ -22,11 +23,17 @@ void ICACHE_RAM_ATTR TXdoneCallback(){
   // waitingACK = true;
 }
 // RX 中断回调函数
-bool ICACHE_RAM_ATTR RXdoneCallback(SX12xxDriverCommon::rx_status const status){
-  if(Radio.RXdataBuffer[1] == ACK){
+bool ICACHE_RAM_ATTR RXdoneCallback(SX12xxDriverCommon::rx_status const status)
+{
+  if(Radio.RXdataBuffer[0] == ACK){
+    ACK++;
     IntervalCount++;
-    if(IntervalCount % 4 == 0){
-      Serial.println(FHSSgetNextFreq());
+    if(IntervalCount % 4 == 0)
+    {
+      IntervalCount = 0;
+      uint32_t currentFreq =FHSSgetNextFreq();
+      Radio.SetFrequencyReg(currentFreq);
+      Serial.println(currentFreq);
     }
   }
   return true;
@@ -76,7 +83,7 @@ void loop(){
   // Serial.println("Initial Freq = " + String(FHSSgetInitialFreq()));
   // Serial.println("Sequense Count = " + String(FHSSgetSequenceCount()));
   // Serial.println("Channel Count = " + String(FHSSgetChannelCount()));
-  // Serial.println("Current Index = " + String(FHSSgetCurrIndex()));
+  Serial.println("Current Index = " + String(FHSSgetCurrIndex()));
   // Serial.println(missedPacket);
   delay(1000);
   yield();
