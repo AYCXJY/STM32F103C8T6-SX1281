@@ -540,7 +540,7 @@ bool ICACHE_RAM_ATTR SX1280Driver::RXnbISR(uint16_t irqStatus, SX12XX_Radio_Numb
         // From table 11-28, pg 81 datasheet rev 3.2
         // upon successsful receipt, when the timer is active or in single mode, it returns to STDBY_RC
         // but because we have AUTO_FS enabled we automatically transition to state SX1280_MODE_FS
-        currOpmode = SX1280_MODE_FS;
+        currOpmode = SX1280_MODE_STDBY_RC;
     }
 
     rx_status fail = SX12XX_RX_OK;
