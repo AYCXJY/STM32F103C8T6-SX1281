@@ -5,23 +5,19 @@
 #include "FHSS.h"
 
 uint8_t testdata[] = "HELLO!";
-uint8_t FHSShopInterval = 4;    
-uint8_t IntervalCount = 0;
+// uint8_t FHSShopInterval = 4;    
+// uint8_t IntervalCount = 0;
 
 
 void ICACHE_RAM_ATTR TXdoneCallback()
 {
-  IntervalCount++;
-  if(IntervalCount % 4 == 0)
-  {
-    Serial.println(FHSSgetNextFreq());
-  }
+  // IntervalCount++;
+  // if(IntervalCount % 4 == 0)
+  // {
+  //   Serial.println(FHSSgetNextFreq());
+  // }
   // 发送完数据翻转LED
   digitalToggle(PC13);
-  // 打印状态信息
-  Serial.println("RSSI = " + Radio.GetRssiInst(SX12XX_Radio_1));
-  Radio.GetStatus(SX12XX_Radio_1);
-
 }
 
 bool ICACHE_RAM_ATTR RXdoneCallback(SX12xxDriverCommon::rx_status const /*status*/)
@@ -62,15 +58,24 @@ void setup()
   init_success = Radio.Begin(FHSSgetMinimumFreq(), FHSSgetMaximumFreq());
   if(!init_success){Serial.println("Radio.Begin failed!");}
   SetRFLinkRate(9);
-
 }
 
 void loop()
 {
   Radio.TXnb(testdata, sizeof(testdata), SX12XX_Radio_1);
 
-  delay(1000);
 
+  // 打印状态信息
+  Radio.GetStatus(SX12XX_Radio_1);
+  // 发送模式时RSSI恒为-127
+  Serial.println(Radio.GetRssiInst(SX12XX_Radio_1));
+  // Serial.println("Initial Freq = " + String(FHSSgetInitialFreq()));
+  // Serial.println("Sequense Count = " + String(FHSSgetSequenceCount()));
+  // Serial.println("Current Index = " + String(FHSSgetCurrIndex()));
+  // Serial.println("Channel Count = " + String(FHSSgetChannelCount()));
+
+
+  delay(1000);
   yield();
 }
 
