@@ -9,7 +9,7 @@
 #define GPIO_PIN_MISO        PA6
 #define GPIO_PIN_SCK         PA5
 
-#define GPIO_PIN_DIO1        PA10
+#define GPIO_PIN_DIO1        PB0
 #define GPIO_PIN_RST         PB4
 #define GPIO_PIN_BUSY        PC15
 
