@@ -4,26 +4,33 @@
 #include "common.h"
 #include "FHSS.h"
 
+#include <Adafruit_SSD1306.h>
+#define OLED_RESET     4 // 定义 OLED 的复位引脚
+#define SCREEN_WIDTH   128 // OLED 屏幕宽度
+#define SCREEN_HEIGHT  64  // OLED 屏幕高度
+// 初始化 OLED 显示器
+Adafruit_SSD1306 display(OLED_RESET);
+
 uint8_t FHSShopInterval = 4;    
 uint8_t IntervalCount = 0;
+uint32_t currentFreq;
 uint8_t ACK = 0x00;
 uint8_t packetSize = 6;
 
-// TX 中断回调函数
+// TX ACK中断回调函数
 void ICACHE_RAM_ATTR TXdoneCallback()
 {
-  // 切换回接收模式
-  Radio.RXnb(SX1280_MODE_RX_CONT);
   // 计算跳频
-  IntervalCount++;
   ACK++;
+  IntervalCount++;
   if(IntervalCount % FHSShopInterval == 0)
   {
     IntervalCount = 0;
-    uint32_t currentFreq =FHSSgetNextFreq();
+    currentFreq = FHSSgetNextFreq();
     Radio.SetFrequencyReg(currentFreq);
-    Serial.println(currentFreq);
   }
+  // 切换回接收模式
+  Radio.RXnb(SX1280_MODE_RX_CONT);
 }
 // RX 中断回调函数
 bool ICACHE_RAM_ATTR RXdoneCallback(SX12xxDriverCommon::rx_status const status)
@@ -41,8 +48,15 @@ bool ICACHE_RAM_ATTR RXdoneCallback(SX12xxDriverCommon::rx_status const status)
   // Serial.println("Initial Freq = " + String(FHSSgetInitialFreq()));
   // Serial.println("Sequense Count = " + String(FHSSgetSequenceCount()));
   // Serial.println("Channel Count = " + String(FHSSgetChannelCount()));
-  Serial.println("Current Index = " + String(FHSSgetCurrIndex()));
+  // Serial.println("Current Index = " + String(FHSSgetCurrIndex()));
+    Serial.println(currentFreq);
 
+    display.clearDisplay();             // 清除屏幕
+    display.setCursor(0, 0);            // 设置光标位置
+    display.println(Radio.GetRssiInst(SX12XX_Radio_1));    // 显示文本
+    display.setCursor(12, 16);            // 设置光标位置
+    display.println(currentFreq);       // 显示文本
+    display.display();
   // 发送应答包
   Radio.TXnb(&ACK, 1, SX12XX_Radio_1);
   return true;
@@ -56,7 +70,22 @@ void SetRFLinkRate(uint8_t index){
   ExpressLRS_currAirRate_Modparams = ModParams;
 }
 
-void setup(){
+void setup()
+{
+  // 初始化 I2C 总线
+  Wire.setSCL(PB8);
+  Wire.setSDA(PB9);
+  Wire.begin();
+    // 初始化 OLED 显示器
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { // OLED 地址通常为 0x3C 或 0x3D
+    Serial.println(F("SSD1306 allocation failed"));
+    for(;;); // 不成功则停止
+  }
+  display.setTextSize(2);             // 正常文本大小
+  display.setTextColor(WHITE);        // 文本颜色为白色
+  display.clearDisplay(); // 清除屏幕
+  display.display();
+
   Serial.begin(115200);
   // 发送和接收使能位
   pinMode(GPIO_PIN_TX_EN, OUTPUT);
