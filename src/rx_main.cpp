@@ -20,7 +20,9 @@ void ICACHE_RAM_ATTR TXdoneCallback()
   if(IntervalCount % FHSShopInterval == 0)
   {
     IntervalCount = 0;
-    Radio.SetFrequencyReg(FHSSgetNextFreq());
+    uint32_t currentFreq =FHSSgetNextFreq();
+    Radio.SetFrequencyReg(currentFreq);
+    Serial.println(currentFreq);
   }
 }
 // RX 中断回调函数
