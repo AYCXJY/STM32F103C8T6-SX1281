@@ -17,6 +17,34 @@ uint32_t currentFreq;
 uint8_t ACK = 0x00;
 uint8_t packetSize = 6;
 
+static void setupBindingFromConfig()
+{
+  // if (firmwareOptions.hasUID)
+  // {
+  //     memcpy(UID, firmwareOptions.uid, UID_LEN);
+  // }
+  // else
+  {
+#ifdef PLATFORM_ESP32
+    esp_read_mac(UID, ESP_MAC_WIFI_STA);
+#elif PLATFORM_STM32
+    UID[0] = (uint8_t)HAL_GetUIDw0();
+    UID[1] = (uint8_t)(HAL_GetUIDw0() >> 8);
+    UID[2] = (uint8_t)HAL_GetUIDw1();
+    UID[3] = (uint8_t)(HAL_GetUIDw1() >> 8);
+    UID[4] = (uint8_t)HAL_GetUIDw2();
+    UID[5] = (uint8_t)(HAL_GetUIDw2() >> 8);
+#endif
+  }
+
+  Serial.print("UID = ");
+  for(int i = 5; i >= 0; i--)  
+  {
+    Serial.print(UID[i]);
+  }
+}
+
+
 // TX ACK中断回调函数
 void ICACHE_RAM_ATTR TXdoneCallback()
 {
@@ -72,6 +100,7 @@ void SetRFLinkRate(uint8_t index){
 
 void setup()
 {
+  setupBindingFromConfig();
   // 初始化 I2C 总线
   Wire.setSCL(PB8);
   Wire.setSDA(PB9);
@@ -107,7 +136,8 @@ void setup()
 }
 
 
-void loop(){
+void loop()
+{
   // 打印状态信息
   // Radio.GetStatus(SX12XX_Radio_1);
   // Serial.println(Radio.GetRssiInst(SX12XX_Radio_1));
