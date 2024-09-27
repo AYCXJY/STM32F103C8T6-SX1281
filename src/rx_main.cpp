@@ -100,7 +100,6 @@ void SetRFLinkRate(uint8_t index){
 
 void setup()
 {
-  setupBindingFromConfig();
   // 初始化 I2C 总线
   Wire.setSCL(PB8);
   Wire.setSDA(PB9);
@@ -114,6 +113,8 @@ void setup()
   display.setTextColor(WHITE);        // 文本颜色为白色
   display.clearDisplay(); // 清除屏幕
   display.display();
+
+  setupBindingFromConfig();
 
   Serial.begin(115200);
   // 发送和接收使能位
@@ -144,6 +145,11 @@ void loop()
   // Serial.println("Initial Freq = " + String(FHSSgetInitialFreq()));
   // Serial.println("Sequense Count = " + String(FHSSgetSequenceCount()));
   // Serial.println("Channel Count = " + String(FHSSgetChannelCount()));
-
+  display.clearDisplay();             // 清除屏幕
+  display.setCursor(0, 0);            // 设置光标位置
+  display.println(UID[0]);    // 显示文本
+  display.display();
+  digitalToggle(PC13);
+  delay(100); 
   yield();
 }
