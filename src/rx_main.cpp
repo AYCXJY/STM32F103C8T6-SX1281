@@ -17,34 +17,6 @@ uint32_t currentFreq;
 uint8_t ACK = 0x00;
 uint8_t packetSize = 6;
 
-static void setupBindingFromConfig()
-{
-  // if (firmwareOptions.hasUID)
-  // {
-  //     memcpy(UID, firmwareOptions.uid, UID_LEN);
-  // }
-  // else
-  {
-#ifdef PLATFORM_ESP32
-    esp_read_mac(UID, ESP_MAC_WIFI_STA);
-#elif PLATFORM_STM32
-    UID[0] = (uint8_t)HAL_GetUIDw0();
-    UID[1] = (uint8_t)(HAL_GetUIDw0() >> 8);
-    UID[2] = (uint8_t)HAL_GetUIDw1();
-    UID[3] = (uint8_t)(HAL_GetUIDw1() >> 8);
-    UID[4] = (uint8_t)HAL_GetUIDw2();
-    UID[5] = (uint8_t)(HAL_GetUIDw2() >> 8);
-#endif
-  }
-
-  Serial.print("UID = ");
-  for(int i = 5; i >= 0; i--)  
-  {
-    Serial.print(UID[i]);
-  }
-}
-
-
 // TX ACK中断回调函数
 void ICACHE_RAM_ATTR TXdoneCallback()
 {
@@ -114,8 +86,6 @@ void setup()
   display.clearDisplay(); // 清除屏幕
   display.display();
 
-  setupBindingFromConfig();
-
   Serial.begin(115200);
   // 发送和接收使能位
   pinMode(GPIO_PIN_TX_EN, OUTPUT);
@@ -137,19 +107,13 @@ void setup()
 }
 
 
-void loop()
-{
+void loop(){
   // 打印状态信息
   // Radio.GetStatus(SX12XX_Radio_1);
   // Serial.println(Radio.GetRssiInst(SX12XX_Radio_1));
   // Serial.println("Initial Freq = " + String(FHSSgetInitialFreq()));
   // Serial.println("Sequense Count = " + String(FHSSgetSequenceCount()));
   // Serial.println("Channel Count = " + String(FHSSgetChannelCount()));
-  display.clearDisplay();             // 清除屏幕
-  display.setCursor(0, 0);            // 设置光标位置
-  display.println(UID[0]);    // 显示文本
-  display.display();
-  digitalToggle(PC13);
-  delay(100); 
+
   yield();
 }
