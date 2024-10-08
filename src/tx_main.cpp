@@ -126,11 +126,11 @@ void loop()
     SetRFLinkRate(enumRatetoIndex(RATE_BINDING));
     sendUIDcount = 0;
     packet.type = PacketType_BIND;
-    packet.payloadSize = 4;
+    packet.payloadSize = 6;
     
     for(int i = 0; i < packet.payloadSize; i++)
     {
-      packet.payload[i] = UID[i+2];
+      packet.payload[i] = UID[i];
     }
     while(millis() - BindingTime < 5000)
     {
@@ -163,15 +163,15 @@ void loop()
     display.println("UID");         
     display.setCursor(0, 8);            
     display.println(packet.payload[0]);
-    display.setCursor(18, 8);            
+    display.setCursor(24, 8);            
     display.println(packet.payload[1]);
-    display.setCursor(40, 8);            
+    display.setCursor(48, 8);            
     display.println(packet.payload[2]);
-    display.setCursor(56, 8);            
+    display.setCursor(0, 16);            
     display.println(packet.payload[3]);
-    display.setCursor(72, 8);            
+    display.setCursor(24, 16);            
     display.println(packet.payload[4]);
-    display.setCursor(88, 8);            
+    display.setCursor(48, 16);            
     display.println(packet.payload[5]);
     display.display();
     delay(1000);
