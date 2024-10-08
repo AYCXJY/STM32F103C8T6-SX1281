@@ -1,6 +1,6 @@
 #include "elrs_eeprom.h"
 #include "targets.h"
-#include "logging.h"
+// #include "logging.h"
 
 #if !defined(TARGET_NATIVE)
 #if defined(PLATFORM_STM32)
@@ -49,7 +49,8 @@ ELRS_EEPROM::ReadByte(const uint32_t address)
     if (address >= RESERVED_EEPROM_SIZE)
     {
         // address is out of bounds
-        ERRLN("EEPROM address is out of bounds");
+        // ERRLN("EEPROM address is out of bounds");
+        Serial.println("EEPROM address is out of bounds");
         return 0;
     }
 #if defined(STM32_USE_FLASH)
@@ -65,7 +66,8 @@ ELRS_EEPROM::WriteByte(const uint32_t address, const uint8_t value)
     if (address >= RESERVED_EEPROM_SIZE)
     {
         // address is out of bounds
-        ERRLN("EEPROM address is out of bounds");
+        // ERRLN("EEPROM address is out of bounds");
+        Serial.println("EEPROM address is out of bounds");
         return;
     }
 #if defined(STM32_USE_FLASH)
