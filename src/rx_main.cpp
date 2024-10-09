@@ -1,43 +1,62 @@
 #include <Arduino.h>
 #include <time.h>
-
 #include "targets.h"
 #include "common.h"
-
 #include "elrs_eeprom.h"
-
 #include "SX1280Driver.h"
 #include "FHSS.h"
-
 #include <Adafruit_SSD1306.h>
-
+// OLED
 #define OLED_RESET     4 
 #define SCREEN_WIDTH   128 
 #define SCREEN_HEIGHT  64
-
-Adafruit_SSD1306 display(OLED_RESET);
-ELRS_EEPROM eeprom;
-
+// Packet
 #define PacketType_BIND   0
 #define PacketType_DATA   1  
+#define payloadsize       5  
+// UID
+#define UID_IS_BOUND(uid) (uid[2] != 255 || uid[3] != 255 || uid[4] != 255 || uid[5] != 255)
+// FHSS
+uint8_t FHSShopInterval = 4;    
+uint8_t IntervalCount;
+uint32_t currentFreq;
+uint8_t currentchannel;
+Adafruit_SSD1306 display(OLED_RESET);
+
+ELRS_EEPROM eeprom;
+
+typedef struct __attribute__((packed)) {
+    uint8_t   type:2,
+              IntervalCount:6;
+    uint8_t   currentchannel;
+    uint8_t   payloadSize;
+    uint8_t   payload[payloadsize];
+} Packet_t;
+
+uint8_t rx_data;
 
 bool inBindingMode;
-#define UID_IS_BOUND(uid) (uid[2] != 255 || uid[3] != 255 || uid[4] != 255 || uid[5] != 255)
 
 void SetRFLinkRate(uint8_t index)
 {
   expresslrs_mod_settings_s *const ModParams = get_elrs_airRateConfig(index);
   Radio.Config(ModParams->bw, ModParams->sf, ModParams->cr, FHSSgetInitialFreq(), 
               ModParams->PreambleLen, false, ModParams->PayloadLength, ModParams->interval, 
-              uidMacSeedGet(), 0, (ModParams->radio_type == RADIO_TYPE_SX128x_FLRC));
+              uidMacSeedGet(), 0, 0);
   ExpressLRS_currAirRate_Modparams = ModParams;
 }
 
 void enterbindingmode(void)
 {
-  SetRFLinkRate(enumRatetoIndex(RATE_BINDING));
-  Radio.RXnb(SX1280_MODE_RX_CONT);
-  inBindingMode = true;
+  if(!inBindingMode)
+  {
+    SetRFLinkRate(enumRatetoIndex(RATE_BINDING));
+    FHSSsetCurrIndex(0);
+    currentFreq = FHSSgetInitialFreq();
+    Radio.SetFrequencyReg(currentFreq);
+    Radio.RXnb(SX1280_MODE_RX_CONT);
+    inBindingMode = true;
+  }
 }
 
 void exitbindingmode(void)
@@ -54,33 +73,35 @@ void handleButtonPress()
 
 bool ICACHE_RAM_ATTR RXdoneCallback(SX12xxDriverCommon::rx_status const status)
 {
-  if(inBindingMode && Radio.RXdataBuffer[0] == PacketType_BIND)
-  {
-    // 
-    uint8_t payloadsize = Radio.RXdataBuffer[1];
-    for(int i = 0; i < payloadsize ; i++){
-      UID[i] = Radio.RXdataBuffer[i+2];
+    Packet_t* const PktPtr = (Packet_t* const)(void*)Radio.RXdataBuffer;
+    if(PktPtr->type == PacketType_BIND)
+    {
+      memcpy(UID + 2, PktPtr->payload, PktPtr->payloadSize);
+      // put UID to eeprom
+      eeprom.Put(0, UID);
+      eeprom.Commit();
+      FHSSrandomiseFHSSsequence(uidMacSeedGet());
+      exitbindingmode();
     }
-    // put UID to eeprom
-    eeprom.Put(0, UID);
-    eeprom.Commit();
-    exitbindingmode();
+    else if (PktPtr->type == PacketType_DATA)
+    {
+      memcpy(&rx_data, PktPtr->payload, PktPtr->payloadSize);
+      currentchannel = PktPtr->currentchannel;
+      IntervalCount = PktPtr->IntervalCount;
+      if(IntervalCount == FHSShopInterval - 1)
+      {
+        currentFreq = FHSSgetNextFreq();
+        Radio.SetFrequencyReg(currentFreq);
+      }
+    }
+    // print RXdataBuffer
+    for (int i = 0; i < 16; i++)
+    {
+        Serial.print(Radio.RXdataBuffer[i]);
+        Serial.print(" ");
+    }
+    Serial.println(" ");
 
-    // // 打印 RXdataBuffer
-    // for (int i = 0; i < 16; i++)
-    // {
-    //   Serial.print(Radio.RXdataBuffer[i]);
-    //   Serial.print(" ");
-    // }
-    // Serial.println(" ");
-    // Serial.print("UID = ");
-    // for(int i = 0; i < 6; i++)  
-    // {
-    //   Serial.print(UID[i]);
-    //   Serial.print(" ");
-    // }
-    // Serial.println(" ");  
-  }
     return true;
 }
 
@@ -110,7 +131,7 @@ void setup()
   pinMode(GPIO_PIN_RX_EN, OUTPUT);
   FHSSrandomiseFHSSsequence(uidMacSeedGet());
   Radio.RXdoneCallback = &RXdoneCallback;
-  Radio.currFreq = FHSSgetInitialFreq(); 
+  currentFreq = FHSSgetInitialFreq(); 
   Radio.Begin(FHSSgetMinimumFreq(), FHSSgetMaximumFreq());
   SetRFLinkRate(enumRatetoIndex(RATE_LORA_500HZ));
   // 开启连续接收模式
@@ -135,26 +156,32 @@ void loop()
   }
   else
   {
-    display.clearDisplay();    
-    // print UID
+    display.clearDisplay();  
+    // UID          
     display.setCursor(0, 0);           
     display.println("UID");         
-    display.setCursor(0, 8);            
-    display.println(UID[0]);
-    display.setCursor(24, 8);            
-    display.println(UID[1]);
-    display.setCursor(48, 8);            
+    display.setCursor(24, 0);            
     display.println(UID[2]);
-    display.setCursor(0, 16);            
+    display.setCursor(48, 0);            
     display.println(UID[3]);
-    display.setCursor(24, 16);            
+    display.setCursor(72, 0);            
     display.println(UID[4]);
-    display.setCursor(48, 16);            
+    display.setCursor(96, 0);            
     display.println(UID[5]);
-    // print RXBuff
-    display.setCursor(0, 24);            
-    display.println(&Radio.RXdataBuffer);
-
+    // FHSS Hop Freq
+    display.setCursor(0, 12);           
+    display.println("Freq");    
+    display.setCursor(30, 12);           
+    display.println(currentFreq);  
+    display.setCursor(94, 12);           
+    display.println(currentchannel);  
+    display.setCursor(118, 12);           
+    display.println(IntervalCount);  
+    // Data 
+    display.setCursor(0, 24);           
+    display.println("Data");  
+    display.setCursor(30, 24);           
+    display.println(rx_data);  
     display.display();
   }
   yield();
