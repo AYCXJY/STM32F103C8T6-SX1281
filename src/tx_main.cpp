@@ -182,10 +182,7 @@ void loop()
             }
             Serial.println(" ");
 
-            while(busyTransmitting)
-            {
-                yield();
-            }
+            while(busyTransmitting){yield();}
         }
         exitbindingmode();
   }
@@ -196,7 +193,9 @@ void loop()
     packet.currentchannel = FHSSgetCurrIndex();
     packet.payloadSize = 1;
     memcpy(packet.payload, &tx_data, packet.payloadSize);
+    while(busyTransmitting){yield();}
     Radio.TXnb((uint8_t*)&packet, 8, SX12XX_Radio_1);
+    busyTransmitting = true;
     tx_data++;
 
     // print packet
@@ -246,7 +245,7 @@ void loop()
     // Serial.println("Channel Count = " + String(FHSSgetChannelCount()));
     // Serial.println("Current Index = " + String(FHSSgetCurrIndex()));
 
-    delay(50);
+    // delay(10);
     // yield();
   }
 }

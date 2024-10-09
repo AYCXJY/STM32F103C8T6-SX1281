@@ -2,28 +2,29 @@
 #include <time.h>
 #include "targets.h"
 #include "common.h"
-#include "elrs_eeprom.h"
 #include "SX1280Driver.h"
 #include "FHSS.h"
-#include <Adafruit_SSD1306.h>
 // OLED
+#include <Adafruit_SSD1306.h>
 #define OLED_RESET     4 
 #define SCREEN_WIDTH   128 
 #define SCREEN_HEIGHT  64
-// Packet
-#define PacketType_BIND   0
-#define PacketType_DATA   1  
-#define payloadsize       5  
-// UID
+Adafruit_SSD1306 display(OLED_RESET);
+// EEPROM
+#include "elrs_eeprom.h"
+ELRS_EEPROM eeprom;
+// UID & BIND
 #define UID_IS_BOUND(uid) (uid[2] != 255 || uid[3] != 255 || uid[4] != 255 || uid[5] != 255)
+bool inBindingMode;
 // FHSS
 uint8_t FHSShopInterval = 4;    
 uint8_t IntervalCount;
 uint32_t currentFreq;
 uint8_t currentchannel;
-Adafruit_SSD1306 display(OLED_RESET);
-
-ELRS_EEPROM eeprom;
+// Packet
+#define PacketType_BIND   0
+#define PacketType_DATA   1  
+#define payloadsize       5  
 
 typedef struct __attribute__((packed)) {
     uint8_t   type:2,
@@ -35,7 +36,6 @@ typedef struct __attribute__((packed)) {
 
 uint8_t rx_data;
 
-bool inBindingMode;
 
 void SetRFLinkRate(uint8_t index)
 {
@@ -63,12 +63,14 @@ void exitbindingmode(void)
 {
   SetRFLinkRate(enumRatetoIndex(RATE_LORA_500HZ));
   Radio.RXnb(SX1280_MODE_RX_CONT);
+  FHSSrandomiseFHSSsequence(uidMacSeedGet());
   inBindingMode = false;
 }
 
 void handleButtonPress() 
 {
   enterbindingmode();
+  digitalToggle(PC13);
 }
 
 bool ICACHE_RAM_ATTR RXdoneCallback(SX12xxDriverCommon::rx_status const status)
@@ -80,7 +82,6 @@ bool ICACHE_RAM_ATTR RXdoneCallback(SX12xxDriverCommon::rx_status const status)
       // put UID to eeprom
       eeprom.Put(0, UID);
       eeprom.Commit();
-      FHSSrandomiseFHSSsequence(uidMacSeedGet());
       exitbindingmode();
     }
     else if (PktPtr->type == PacketType_DATA)
@@ -95,13 +96,12 @@ bool ICACHE_RAM_ATTR RXdoneCallback(SX12xxDriverCommon::rx_status const status)
       }
     }
     // print RXdataBuffer
-    for (int i = 0; i < 16; i++)
-    {
-        Serial.print(Radio.RXdataBuffer[i]);
-        Serial.print(" ");
-    }
-    Serial.println(" ");
-
+    // for (int i = 0; i < 16; i++)
+    // {
+    //     Serial.print(Radio.RXdataBuffer[i]);
+    //     Serial.print(" ");
+    // }
+    // Serial.println(" ");
     return true;
 }
 
@@ -182,6 +182,10 @@ void loop()
     display.println("Data");  
     display.setCursor(30, 24);           
     display.println(rx_data);  
+    display.setCursor(54, 24);           
+    display.println("RSSI");  
+    display.setCursor(84, 24);           
+    display.println(Radio.GetRssiInst(SX12XX_Radio_1));  
     display.display();
   }
   yield();
