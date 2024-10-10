@@ -469,7 +469,7 @@ void ICACHE_RAM_ATTR SX1280Driver::ClearIrqStatus(uint16_t irqMask, SX12XX_Radio
 
 void ICACHE_RAM_ATTR SX1280Driver::TXnbISR()
 {
-    currOpmode = SX1280_MODE_STDBY_RC; // radio goes to FS after TX
+    currOpmode = SX1280_MODE_FS; // radio goes to FS after TX
 #ifdef DEBUG_SX1280_OTA_TIMING
     endTX = micros();
     DBGLN("TOA: %d", endTX - beginTX);
