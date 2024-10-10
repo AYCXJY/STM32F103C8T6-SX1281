@@ -1,9 +1,7 @@
 #include <Arduino.h>
 #include <time.h>
-
 #include "targets.h"
 #include "common.h"
-
 #include "SX1280Driver.h"
 #include "FHSS.h"
 // OLED
@@ -15,8 +13,13 @@ Adafruit_SSD1306 display(OLED_RESET);
 // Packet
 #define PacketType_BIND   0
 #define PacketType_DATA   1  
+#define PacketType_SYNC   2  
 #define payloadsize       5
+
+uint8_t tx_data;
+
 volatile bool busyTransmitting;
+
 WORD_ALIGNED_ATTR typedef struct __attribute__((packed)) {
     uint8_t   type:2,
               IntervalCount:6;
@@ -24,11 +27,10 @@ WORD_ALIGNED_ATTR typedef struct __attribute__((packed)) {
     uint8_t   payloadSize;
     uint8_t   payload[payloadsize];
 } Packet_t;
+
 Packet_t packet;
-uint8_t tx_data;
 // BIND
 bool inBindingMode;
-static uint8_t BindingSendCount;
 uint32_t BindingTime;
 // FHSS
 uint8_t FHSShopInterval = 4;    
@@ -48,7 +50,6 @@ void ICACHE_RAM_ATTR TXdoneCallback()
     }
   }
   busyTransmitting = false;
-  digitalToggle(PC13);
 }
 
 void SetRFLinkRate(uint8_t index)
@@ -57,7 +58,6 @@ void SetRFLinkRate(uint8_t index)
   Radio.Config(ModParams->bw, ModParams->sf, ModParams->cr, FHSSgetInitialFreq(), 
               ModParams->PreambleLen, false, ModParams->PayloadLength, ModParams->interval, 
               uidMacSeedGet(), 0, 0);
-  ExpressLRS_currAirRate_Modparams = ModParams;
 }
 
 static void setupBindingFromConfig()
@@ -68,7 +68,6 @@ static void setupBindingFromConfig()
   UID[3] = (uint8_t)(HAL_GetUIDw1() >> 8);
   UID[4] = (uint8_t)HAL_GetUIDw2();
   UID[5] = (uint8_t)(HAL_GetUIDw2() >> 8);
- 
   // print UID 
   // Serial.print("UID = ");
   // for(int i = 0; i < 6; i++)  
@@ -81,11 +80,15 @@ static void setupBindingFromConfig()
 
 void enterbindingmode(void)
 {
+  if(inBindingMode == false)
+  {
+    inBindingMode = true;
+    BindingTime = millis();
     SetRFLinkRate(enumRatetoIndex(RATE_BINDING));
     FHSSsetCurrIndex(0);
     currentFreq = FHSSgetInitialFreq();
     Radio.SetFrequencyReg(currentFreq);
-    inBindingMode = true;
+  }   
 }
 
 void exitbindingmode(void)
@@ -94,13 +97,9 @@ void exitbindingmode(void)
   inBindingMode = false;  
 }
 
-void handleButtonPress() 
+void handleButtonPress()
 {
-  if(inBindingMode == false)
-  {
-    enterbindingmode();
-    BindingTime = millis();
-  }   
+  enterbindingmode();
 }
 
 void setup()
@@ -116,7 +115,8 @@ void setup()
   Wire.setSCL(PB8);
   Wire.setSDA(PB9);
   Wire.begin();
-  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { 
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) 
+  { 
     Serial.println(F("SSD1306 allocation failed"));
     for(;;); 
   }
@@ -137,79 +137,74 @@ void setup()
 
 void loop()
 {
-    if(inBindingMode)
+  if(inBindingMode)
+  { // send bind packet
+    // load packet
+    packet.type = PacketType_BIND;
+    packet.IntervalCount = 0;
+    packet.currentchannel = FHSSgetCurrIndex();
+    packet.payloadSize = sizeof(UID) - 2;
+    memcpy(packet.payload, UID + 2, packet.payloadSize);
+    // OLED show
+    display.clearDisplay();          
+    display.setCursor(0, 0);            
+    display.println("sending UID...");      
+    display.setCursor(0, 12);           
+    display.println("UID");         
+    display.setCursor(24, 12);            
+    display.println(UID[2]);
+    display.setCursor(48, 12);            
+    display.println(UID[3]);
+    display.setCursor(72, 12);            
+    display.println(UID[4]);
+    display.setCursor(96, 12);            
+    display.println(UID[5]);
+    display.setCursor(0, 24);           
+    display.println("Freq");    
+    display.setCursor(30, 24);           
+    display.println(currentFreq);  
+    display.setCursor(94, 24);           
+    display.println(packet.currentchannel);  
+    display.display();
+    // send UID 1s
+    while(millis() - BindingTime < 1000)
     {
-        packet.type = PacketType_BIND;
-        packet.IntervalCount = 0;
-        packet.currentchannel = FHSSgetCurrIndex();
-        packet.payloadSize = sizeof(UID) - 2;
-        memcpy(packet.payload, UID + 2, packet.payloadSize);
-
-        display.clearDisplay();          
-        display.setCursor(0, 0);            
-        display.println("sending UID...");
-        // UID          
-        display.setCursor(0, 12);           
-        display.println("UID");         
-        display.setCursor(24, 12);            
-        display.println(UID[2]);
-        display.setCursor(48, 12);            
-        display.println(UID[3]);
-        display.setCursor(72, 12);            
-        display.println(UID[4]);
-        display.setCursor(96, 12);            
-        display.println(UID[5]);
-        // FHSS Hop Freq
-        display.setCursor(0, 24);           
-        display.println("Freq");    
-        display.setCursor(30, 24);           
-        display.println(currentFreq);  
-        display.setCursor(94, 24);           
-        display.println(packet.currentchannel);  
-        display.display();
-
-        while(millis() - BindingTime < 1000)
-        {
-            busyTransmitting = true;
-            Radio.TXnb((uint8_t*)&packet, 8, SX12XX_Radio_1);
-
-            uint8_t output[8];
-            memcpy(output, &packet, 8);
-            for(int i = 0; i < sizeof(packet); i++)
-            {
-                Serial.print(output[i]);
-                Serial.print(" ");
-            }
-            Serial.println(" ");
-
-            while(busyTransmitting){yield();}
-        }
-        exitbindingmode();
+      while(busyTransmitting)
+      {
+        yield();
+      }
+      busyTransmitting = true;
+      Radio.TXnb((uint8_t*)&packet, 8, SX12XX_Radio_1);
+      // print packet
+      uint8_t output[8];
+      memcpy(output, &packet, 8);
+      for(int i = 0; i < sizeof(packet); i++)
+      {
+          Serial.print(output[i]);
+          Serial.print(" ");
+      }
+      Serial.println(" ");
+    }
+    // exit bind
+    exitbindingmode();
   }
   else
-  {
+  { // send data packet
     packet.type = PacketType_DATA;
     packet.IntervalCount = IntervalCount;
     packet.currentchannel = FHSSgetCurrIndex();
     packet.payloadSize = 1;
     memcpy(packet.payload, &tx_data, packet.payloadSize);
-    while(busyTransmitting){yield();}
-    Radio.TXnb((uint8_t*)&packet, 8, SX12XX_Radio_1);
     busyTransmitting = true;
-    tx_data++;
-
-    // print packet
-    uint8_t output[8];
-    memcpy(output, &packet, 8);
-    for(int i = 0; i < sizeof(packet); i++)
+    Radio.TXnb((uint8_t*)&packet, 8, SX12XX_Radio_1);
+    while(busyTransmitting)
     {
-        Serial.print(output[i]);
-        Serial.print(" ");
+      yield();
     }
-    Serial.println(" ");
-
-    display.clearDisplay();  
-    // UID          
+    tx_data++;
+  }
+    // OLED show
+    display.clearDisplay();        
     display.setCursor(0, 0);           
     display.println("UID");         
     display.setCursor(24, 0);            
@@ -220,7 +215,6 @@ void loop()
     display.println(UID[4]);
     display.setCursor(96, 0);            
     display.println(UID[5]);
-    // FHSS Hop Freq
     display.setCursor(0, 12);           
     display.println("Freq");    
     display.setCursor(30, 12);           
@@ -229,25 +223,20 @@ void loop()
     display.println(packet.currentchannel);  
     display.setCursor(118, 12);           
     display.println(packet.IntervalCount);  
-    // Data 
     display.setCursor(0, 24);           
     display.println("Data");  
     display.setCursor(30, 24);           
     display.println(tx_data);  
     display.display();
-   
-
-    // // 调试信息
-    // Radio.GetStatus(SX12XX_Radio_1);
-    // Serial.println(Radio.GetRssiInst(SX12XX_Radio_1));
-    // Serial.println("Initial Freq = " + String(FHSSgetInitialFreq()));
-    // Serial.println("Sequense Count = " + String(FHSSgetSequenceCount()));
-    // Serial.println("Channel Count = " + String(FHSSgetChannelCount()));
-    // Serial.println("Current Index = " + String(FHSSgetCurrIndex()));
-
-    // delay(10);
-    // yield();
-  }
+    // print packet
+    uint8_t output[8];
+    memcpy(output, &packet, 8);
+    for(int i = 0; i < sizeof(packet); i++)
+    {
+        Serial.print(output[i]);
+        Serial.print(" ");
+    }
+    Serial.println(" ");
 }
 
 
