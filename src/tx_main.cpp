@@ -4,6 +4,12 @@
 #include "SX1280Driver.h"
 #include "FHSS.h"
 #include "TimerInterrupt_Generic.h"
+// OLED
+#include <Adafruit_SSD1306.h>
+#define OLED_RESET     4 
+#define SCREEN_WIDTH   128 
+#define SCREEN_HEIGHT  64
+Adafruit_SSD1306 display(OLED_RESET);
 // send rate
 uint16_t sendcount;
 uint16_t sendfreq;
@@ -113,6 +119,15 @@ void setup()
     // Button
     pinMode(PB1, INPUT_PULLUP);            
     attachInterrupt(digitalPinToInterrupt(PB1), handleButtonPress, FALLING);  
+    // OLED
+    Wire.setSCL(PB8);
+    Wire.setSDA(PB9);
+    Wire.begin();
+    display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+    display.setTextSize(1);            
+    display.setTextColor(WHITE);        
+    display.clearDisplay(); 
+    display.display();
     // SX1280
     setupBindingFromConfig();
     FHSSrandomiseFHSSsequence(uidMacSeedGet());
@@ -124,6 +139,20 @@ void setup()
     SetRFLinkRate(enumRatetoIndex(RATE_LORA_500HZ));
     // timer
     ITimer.attachInterruptInterval(TIMER_INTERVAL_MS, TimerHandler);
+    // OLED display
+    display.clearDisplay();  
+    // UID 
+    display.setCursor(0, 0);           
+    display.println("ID");         
+    display.setCursor(18, 0);            
+    display.println(UID[2]);
+    display.setCursor(42, 0);            
+    display.println(UID[3]);
+    display.setCursor(66, 0);            
+    display.println(UID[4]);
+    display.setCursor(90, 0);            
+    display.println(UID[5]);
+    display.display();
 }
 // 主循环
 void loop()
