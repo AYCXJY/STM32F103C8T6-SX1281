@@ -4,6 +4,7 @@
 #include "common.h"
 #include "SX1280Driver.h"
 #include "FHSS.h"
+#include "TimerInterrupt_Generic.h"
 // OLED
 #include <Adafruit_SSD1306.h>
 #define OLED_RESET     4 
@@ -17,6 +18,14 @@ Adafruit_SSD1306 display(OLED_RESET);
 #define payloadsize       5
 
 uint8_t tx_data;
+
+uint32_t now;
+uint16_t sendcount;
+uint16_t sendfreq;
+
+#define TIMER_INTERVAL_MS 1000000
+STM32Timer ITimer(TIM1);
+
 
 volatile bool busyTransmitting;
 
@@ -41,6 +50,7 @@ void ICACHE_RAM_ATTR TXdoneCallback()
 {
   if(inBindingMode == false)
   {
+    sendcount++;
     IntervalCount++;
     if(IntervalCount % FHSShopInterval == 0)
     {
@@ -102,6 +112,16 @@ void handleButtonPress()
   enterbindingmode();
 }
 
+void TimerHandler() 
+{
+  Serial.println(millis() - now);
+  Serial.println(sendfreq);
+  digitalToggle(PC13);
+  sendfreq = sendcount;
+  sendcount = 0;
+  now = millis();
+}
+
 void setup()
 {
   // UART
@@ -133,10 +153,18 @@ void setup()
   currentFreq = FHSSgetInitialFreq(); 
   Radio.Begin(FHSSgetMinimumFreq(), FHSSgetMaximumFreq());
   SetRFLinkRate(enumRatetoIndex(RATE_LORA_500HZ));
+
+  if (ITimer.attachInterruptInterval(TIMER_INTERVAL_MS, TimerHandler)) 
+  {
+    Serial.println("定时器启动成功");
+  } else {
+    Serial.println("定时器启动失败");
+  }
 }
 
 void loop()
 {
+
   if(inBindingMode)
   { // send bind packet
     // load packet
@@ -204,39 +232,41 @@ void loop()
     tx_data++;
   }
     // OLED show
-    display.clearDisplay();        
-    display.setCursor(0, 0);           
-    display.println("UID");         
-    display.setCursor(24, 0);            
-    display.println(UID[2]);
-    display.setCursor(48, 0);            
-    display.println(UID[3]);
-    display.setCursor(72, 0);            
-    display.println(UID[4]);
-    display.setCursor(96, 0);            
-    display.println(UID[5]);
-    display.setCursor(0, 12);           
-    display.println("Freq");    
-    display.setCursor(30, 12);           
-    display.println(currentFreq);  
-    display.setCursor(94, 12);           
-    display.println(packet.currentchannel);  
-    display.setCursor(118, 12);           
-    display.println(packet.IntervalCount);  
-    display.setCursor(0, 24);           
-    display.println("Data");  
-    display.setCursor(30, 24);           
-    display.println(tx_data);  
-    display.display();
-    // print packet
-    uint8_t output[8];
-    memcpy(output, &packet, 8);
-    for(int i = 0; i < sizeof(packet); i++)
-    {
-        Serial.print(output[i]);
-        Serial.print(" ");
-    }
-    Serial.println(" ");
+    // display.clearDisplay();        
+    // display.setCursor(0, 0);           
+    // display.println("UID");         
+    // display.setCursor(24, 0);            
+    // display.println(UID[2]);
+    // display.setCursor(48, 0);            
+    // display.println(UID[3]);
+    // display.setCursor(72, 0);            
+    // display.println(UID[4]);
+    // display.setCursor(96, 0);            
+    // display.println(UID[5]);
+    // display.setCursor(0, 12);           
+    // display.println("Freq");    
+    // display.setCursor(30, 12);           
+    // display.println(currentFreq);  
+    // display.setCursor(94, 12);           
+    // display.println(packet.currentchannel);  
+    // display.setCursor(118, 12);           
+    // display.println(packet.IntervalCount);  
+    // display.setCursor(0, 24);           
+    // display.println("Data");  
+    // display.setCursor(30, 24);           
+    // display.println(tx_data);  
+    // display.setCursor(54, 24);           
+    // display.println(sendfreq);  
+    // display.display();
+    // // print packet
+    // uint8_t output[8];
+    // memcpy(output, &packet, 8);
+    // for(int i = 0; i < sizeof(packet); i++)
+    // {
+    //     Serial.print(output[i]);
+    //     Serial.print(" ");
+    // }
+    // Serial.println(" ");
 }
 
 
