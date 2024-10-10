@@ -4,6 +4,7 @@
 #include "common.h"
 #include "SX1280Driver.h"
 #include "FHSS.h"
+#include "TimerInterrupt_Generic.h"
 // OLED
 #include <Adafruit_SSD1306.h>
 #define OLED_RESET     4 
@@ -36,6 +37,13 @@ typedef struct __attribute__((packed)) {
 } Packet_t;
 
 uint8_t rx_data;
+
+uint32_t now;
+uint16_t receivecount;
+uint16_t receivefreq;
+
+#define TIMER_INTERVAL_MS 1000000
+STM32Timer ITimer(TIM1);
 
 void SetRFLinkRate(uint8_t index)
 {
@@ -84,6 +92,7 @@ bool ICACHE_RAM_ATTR RXdoneCallback(SX12xxDriverCommon::rx_status const status)
     }
     else if (PktPtr->type == PacketType_DATA)
     {
+      receivecount++;
       memcpy(&rx_data, PktPtr->payload, 1);
       currentchannel = PktPtr->currentchannel;
       IntervalCount = PktPtr->IntervalCount;
@@ -93,15 +102,24 @@ bool ICACHE_RAM_ATTR RXdoneCallback(SX12xxDriverCommon::rx_status const status)
         Radio.SetFrequencyReg(currentFreq);
       }
     }
-    // print RXdataBuffer
-    for (int i = 0; i < 8; i++)
-    {
-        Serial.print(Radio.RXdataBuffer[i]);
-        Serial.print(" ");
-    }
-    Serial.println(" ");
+    // // print RXdataBuffer
+    // for (int i = 0; i < 8; i++)
+    // {
+    //     Serial.print(Radio.RXdataBuffer[i]);
+    //     Serial.print(" ");
+    // }
+    // Serial.println(" ");
 
     return true;
+}
+
+void TimerHandler() 
+{
+  Serial.println(millis() - now);
+  Serial.println(receivefreq);
+  receivefreq = receivecount;
+  receivecount = 0;
+  now = millis();
 }
 
 void setup()
@@ -143,12 +161,20 @@ void setup()
   {
     enterbindingmode();
   }
+
+  if (ITimer.attachInterruptInterval(TIMER_INTERVAL_MS, TimerHandler)) 
+  {
+    Serial.println("定时器启动成功");
+  } else {
+    Serial.println("定时器启动失败");
+  }
 }
 
 void loop()
 {
   if(inBindingMode)
   {
+    // digitalToggle(PC13);
     display.clearDisplay();             
     display.setCursor(0, 0);            
     display.println("receiving UID...");
@@ -182,8 +208,8 @@ void loop()
     display.println("Data");  
     display.setCursor(30, 24);           
     display.println(rx_data);  
-    display.setCursor(54, 24);           
-    display.println("RSSI");  
+    display.setCursor(54, 24);      
+    display.println(receivefreq);           
     display.setCursor(84, 24);           
     display.println(Radio.GetRssiInst(SX12XX_Radio_1));  
     display.display();
