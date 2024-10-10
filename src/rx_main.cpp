@@ -24,6 +24,7 @@ uint8_t currentchannel;
 // Packet
 #define PacketType_BIND   0
 #define PacketType_DATA   1  
+#define PacketType_SYNC   2  
 #define payloadsize       5  
 
 typedef struct __attribute__((packed)) {
@@ -36,49 +37,46 @@ typedef struct __attribute__((packed)) {
 
 uint8_t rx_data;
 
-
 void SetRFLinkRate(uint8_t index)
 {
   expresslrs_mod_settings_s *const ModParams = get_elrs_airRateConfig(index);
   Radio.Config(ModParams->bw, ModParams->sf, ModParams->cr, FHSSgetInitialFreq(), 
               ModParams->PreambleLen, false, ModParams->PayloadLength, ModParams->interval, 
               uidMacSeedGet(), 0, 0);
-  ExpressLRS_currAirRate_Modparams = ModParams;
 }
 
 void enterbindingmode(void)
 {
-  if(!inBindingMode)
+  if(inBindingMode == false)
   {
+    inBindingMode = true;
     SetRFLinkRate(enumRatetoIndex(RATE_BINDING));
     FHSSsetCurrIndex(0);
     currentFreq = FHSSgetInitialFreq();
     Radio.SetFrequencyReg(currentFreq);
     Radio.RXnb(SX1280_MODE_RX_CONT);
-    inBindingMode = true;
   }
 }
 
 void exitbindingmode(void)
 {
-  SetRFLinkRate(enumRatetoIndex(RATE_LORA_500HZ));
-  Radio.RXnb(SX1280_MODE_RX_CONT);
-  FHSSrandomiseFHSSsequence(uidMacSeedGet());
   inBindingMode = false;
+  SetRFLinkRate(enumRatetoIndex(RATE_LORA_500HZ));
+  FHSSrandomiseFHSSsequence(uidMacSeedGet());
+  Radio.RXnb(SX1280_MODE_RX_CONT);
 }
 
 void handleButtonPress() 
 {
   enterbindingmode();
-  digitalToggle(PC13);
 }
 
 bool ICACHE_RAM_ATTR RXdoneCallback(SX12xxDriverCommon::rx_status const status)
 {
     Packet_t* const PktPtr = (Packet_t* const)(void*)Radio.RXdataBuffer;
-    if(PktPtr->type == PacketType_BIND)
+    if(inBindingMode && PktPtr->type == PacketType_BIND)
     {
-      memcpy(UID + 2, PktPtr->payload, PktPtr->payloadSize);
+      memcpy(UID + 2, PktPtr->payload, 4);
       // put UID to eeprom
       eeprom.Put(0, UID);
       eeprom.Commit();
@@ -86,7 +84,7 @@ bool ICACHE_RAM_ATTR RXdoneCallback(SX12xxDriverCommon::rx_status const status)
     }
     else if (PktPtr->type == PacketType_DATA)
     {
-      memcpy(&rx_data, PktPtr->payload, PktPtr->payloadSize);
+      memcpy(&rx_data, PktPtr->payload, 1);
       currentchannel = PktPtr->currentchannel;
       IntervalCount = PktPtr->IntervalCount;
       if(IntervalCount == FHSShopInterval - 1)
@@ -96,12 +94,13 @@ bool ICACHE_RAM_ATTR RXdoneCallback(SX12xxDriverCommon::rx_status const status)
       }
     }
     // print RXdataBuffer
-    // for (int i = 0; i < 16; i++)
-    // {
-    //     Serial.print(Radio.RXdataBuffer[i]);
-    //     Serial.print(" ");
-    // }
-    // Serial.println(" ");
+    for (int i = 0; i < 8; i++)
+    {
+        Serial.print(Radio.RXdataBuffer[i]);
+        Serial.print(" ");
+    }
+    Serial.println(" ");
+
     return true;
 }
 
@@ -118,7 +117,8 @@ void setup()
   Wire.setSCL(PB8);
   Wire.setSDA(PB9);
   Wire.begin();
-  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { 
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) 
+  { 
     Serial.println(F("SSD1306 allocation failed"));
     for(;;); 
   }
@@ -188,5 +188,4 @@ void loop()
     display.println(Radio.GetRssiInst(SX12XX_Radio_1));  
     display.display();
   }
-  yield();
 }
