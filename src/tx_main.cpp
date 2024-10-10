@@ -125,7 +125,7 @@ void setup()
     // timer
     ITimer.attachInterruptInterval(TIMER_INTERVAL_MS, TimerHandler);
 }
-// 主主循环
+// 主循环
 void loop()
 {
     if(inBindingMode)
