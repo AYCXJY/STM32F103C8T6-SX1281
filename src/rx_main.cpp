@@ -120,7 +120,7 @@ bool ICACHE_RAM_ATTR RXdoneCallback(SX12xxDriverCommon::rx_status const status)
 void setup()
 {
     // UART
-    Serial.begin(115200);
+    Serial.begin(420000);
     // LED
     pinMode(PC13, OUTPUT);
     // Button
