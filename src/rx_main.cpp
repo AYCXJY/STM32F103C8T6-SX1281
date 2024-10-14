@@ -1,62 +1,91 @@
 #include <Arduino.h>
-#include <time.h>
+#include <Adafruit_SSD1306.h>
+
 #include "targets.h"
 #include "common.h"
 #include "SX1280Driver.h"
 #include "FHSS.h"
-#include "TimerInterrupt_Generic.h"
-// OLED
-#include <Adafruit_SSD1306.h>
+#include "hwTimer.h"
+#include "elrs_eeprom.h"
+#include "PFD.h"
+
+/******************* define *********************/
+// oled setting
 #define OLED_RESET     4 
 #define SCREEN_WIDTH   128 
 #define SCREEN_HEIGHT  64
-Adafruit_SSD1306 display(OLED_RESET);
-// EEPROM
-#include "elrs_eeprom.h"
-ELRS_EEPROM eeprom;
-// UID & BIND
-#define UID_IS_BOUND(uid) (uid[2] != 255 || uid[3] != 255 || uid[4] != 255 || uid[5] != 255)
-bool inBindingMode;
-// FHSS
-uint8_t FHSShopInterval = 4;    
-uint8_t IntervalCount;
-uint32_t currentFreq;
-uint8_t currentchannel;
-// Packet
+// packet type
 #define PacketType_BIND   0
 #define PacketType_DATA   1  
 #define PacketType_SYNC   2  
-#define payloadsize       5  
 
-typedef struct __attribute__((packed)) {
+#define payloadsize       5
+#define FHSShopInterval   4
+
+#define UID_IS_BOUND(uid) (uid[2] != 255 || uid[3] != 255 || uid[4] != 255 || uid[5] != 255)
+
+/***************** class *************************/
+Adafruit_SSD1306 display(OLED_RESET);
+ELRS_EEPROM eeprom;
+PFD PFDloop;
+/***************** global variable ***************/
+// packet struct
+WORD_ALIGNED_ATTR typedef struct __attribute__((packed)) {
     uint8_t   type:2,
               IntervalCount:6;
     uint8_t   currentchannel;
     uint8_t   payloadSize;
     uint8_t   payload[payloadsize];
 } Packet_t;
-
-uint8_t rx_data;
-
-uint32_t now;
+Packet_t packet;
+// recieve rate
 uint16_t receivecount;
 uint16_t receivefreq;
-
-#define TIMER_INTERVAL_MS 1000000
-STM32Timer ITimer(TIM1);
+// now time
+uint32_t now;
+// receive data
+uint8_t rx_data;
+// bind status
+bool inBindingMode;
+uint8_t ExpressLRS_nextAirRateIndex;
+// FHSS hop count 
+uint8_t OtaNonce = 0;
+// current freq
+uint32_t currentFreq = 0;
+// currunt channel
+uint8_t currentchannel;
+ 
 // 设置SX1280速率
-void SetRFLinkRate(uint8_t index)
+void SetRFLinkRate(uint8_t index, bool bindMode) // Set speed of RF link
 {
     expresslrs_mod_settings_s *const ModParams = get_elrs_airRateConfig(index);
-    Radio.Config(ModParams->bw, ModParams->sf, ModParams->cr, FHSSgetInitialFreq(), 
-                ModParams->PreambleLen, false, ModParams->PayloadLength, ModParams->interval, 
-                uidMacSeedGet(), 0, 0);
+    expresslrs_rf_pref_params_s *const RFperf = get_elrs_RFperfParams(index);
+    // Binding always uses invertIQ
+    bool invertIQ = bindMode || (UID[5] & 0x01);
+
+    uint32_t interval = ModParams->interval;
+    hwTimer::updateInterval(interval);
+
+    FHSSusePrimaryFreqBand = !(ModParams->radio_type == RADIO_TYPE_LR1121_LORA_2G4) && !(ModParams->radio_type == RADIO_TYPE_LR1121_GFSK_2G4);
+    FHSSuseDualBand = ModParams->radio_type == RADIO_TYPE_LR1121_LORA_DUAL;
+
+    Radio.Config(ModParams->bw, ModParams->sf, ModParams->cr, FHSSgetInitialFreq(),
+                 ModParams->PreambleLen, invertIQ, ModParams->PayloadLength, 0
+                 , uidMacSeedGet(), 0, (ModParams->radio_type == RADIO_TYPE_SX128x_FLRC));
+
+
+    Radio.FuzzySNRThreshold = (RFperf->DynpowerSnrThreshUp == DYNPOWER_SNR_THRESH_NONE) ? 0 : (RFperf->DynpowerSnrThreshDn - RFperf->DynpowerSnrThreshUp);
+
+
+    ExpressLRS_currAirRate_Modparams = ModParams;
+    ExpressLRS_currAirRate_RFperfParams = RFperf;
+    ExpressLRS_nextAirRateIndex = index; // presumably we just handled this
 }
 // 退出绑定模式
 void exitbindingmode(void)
 {
     inBindingMode = false;
-    SetRFLinkRate(enumRatetoIndex(RATE_LORA_500HZ));
+    SetRFLinkRate(enumRatetoIndex(RATE_LORA_500HZ), false);
     currentchannel = 0;
     FHSSsetCurrIndex(currentchannel);
     currentFreq = FHSSgetInitialFreq();
@@ -71,7 +100,7 @@ void enterbindingmode(void)
     if(inBindingMode == false)
     {
         inBindingMode = true;
-        SetRFLinkRate(enumRatetoIndex(RATE_BINDING));
+        SetRFLinkRate(enumRatetoIndex(RATE_BINDING), true);
         currentchannel = 0;
         FHSSsetCurrIndex(currentchannel);
         currentFreq = FHSSgetInitialFreq();
@@ -85,11 +114,14 @@ void handleButtonPress()
   enterbindingmode();
 }
 // 处理定时器中断 输出收包频率
-void TimerHandler() 
+void tick() 
 {
-  Serial.println(receivefreq);
-  receivefreq = receivecount;
-  receivecount = 0;
+    // Serial.println("tick");
+    // Serial.println(millis());
+}
+void tock() 
+{
+ 
 }
 // 处理接收完毕中断
 bool ICACHE_RAM_ATTR RXdoneCallback(SX12xxDriverCommon::rx_status const status)
@@ -107,8 +139,8 @@ bool ICACHE_RAM_ATTR RXdoneCallback(SX12xxDriverCommon::rx_status const status)
       receivecount++;
       memcpy(&rx_data, PktPtr->payload, 1);
       currentchannel = PktPtr->currentchannel;
-      IntervalCount = PktPtr->IntervalCount;
-      if(IntervalCount == FHSShopInterval - 1)
+      OtaNonce = PktPtr->IntervalCount;
+      if(OtaNonce == FHSShopInterval - 1)
       {
         currentFreq = FHSSgetNextFreq();
         Radio.SetFrequencyReg(currentFreq);
@@ -142,9 +174,12 @@ void setup()
     Radio.RXdoneCallback = &RXdoneCallback;
     currentFreq = FHSSgetInitialFreq(); 
     Radio.Begin(FHSSgetMinimumFreq(), FHSSgetMaximumFreq());
-    SetRFLinkRate(enumRatetoIndex(RATE_LORA_500HZ));
+    SetRFLinkRate(enumRatetoIndex(RATE_LORA_500HZ), false);
     // 开启连续接收模式
     Radio.RXnb(SX1280_MODE_RX_CONT);
+    // timer
+    hwTimer::init(tick, tock);
+    hwTimer::resume();
     // eeprom
     eeprom.Begin();
     eeprom.Get(0, UID);
@@ -152,7 +187,6 @@ void setup()
     {
         enterbindingmode();
     }
-    ITimer.attachInterruptInterval(TIMER_INTERVAL_MS, TimerHandler);
 }
 // 主循环
 void loop()
