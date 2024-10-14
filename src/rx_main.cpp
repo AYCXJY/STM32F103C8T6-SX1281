@@ -49,13 +49,13 @@ uint8_t rx_data;
 bool inBindingMode;
 uint8_t ExpressLRS_nextAirRateIndex;
 // FHSS hop count 
-uint8_t OtaNonce = 0;
+volatile uint8_t OtaNonce;
 // current freq
 uint32_t currentFreq = 0;
 // currunt channel
 uint8_t currentchannel;
  
-// 设置SX1280速率
+
 void SetRFLinkRate(uint8_t index, bool bindMode) // Set speed of RF link
 {
     expresslrs_mod_settings_s *const ModParams = get_elrs_airRateConfig(index);
@@ -81,7 +81,7 @@ void SetRFLinkRate(uint8_t index, bool bindMode) // Set speed of RF link
     ExpressLRS_currAirRate_RFperfParams = RFperf;
     ExpressLRS_nextAirRateIndex = index; // presumably we just handled this
 }
-// 退出绑定模式
+
 void exitbindingmode(void)
 {
     inBindingMode = false;
@@ -94,7 +94,7 @@ void exitbindingmode(void)
 
     FHSSrandomiseFHSSsequence(uidMacSeedGet());
 }
-// 进入绑定模式
+
 void enterbindingmode(void)
 {
     if(inBindingMode == false)
@@ -108,22 +108,23 @@ void enterbindingmode(void)
         Radio.RXnb(SX1280_MODE_RX_CONT);
     }
 }
-// 处理按键中断
+
 void handleButtonPress() 
 {
   enterbindingmode();
 }
-// 处理定时器中断 输出收包频率
+
 void tick() 
 {
     // Serial.println("tick");
     // Serial.println(millis());
 }
+
 void tock() 
 {
  
 }
-// 处理接收完毕中断
+
 bool ICACHE_RAM_ATTR RXdoneCallback(SX12xxDriverCommon::rx_status const status)
 {
     Packet_t* const PktPtr = (Packet_t* const)(void*)Radio.RXdataBuffer;
@@ -148,7 +149,7 @@ bool ICACHE_RAM_ATTR RXdoneCallback(SX12xxDriverCommon::rx_status const status)
     }
     return true;
 }
-// 初始化
+
 void setup()
 {
     // UART
@@ -188,7 +189,7 @@ void setup()
         enterbindingmode();
     }
 }
-// 主循环
+
 void loop()
 {
     display.clearDisplay();  
