@@ -51,7 +51,7 @@ uint8_t ExpressLRS_nextAirRateIndex;
 // FHSS hop count 
 volatile uint8_t OtaNonce;
 // current freq
-uint32_t currentFreq = 0;
+uint32_t currentFreq;
 // currunt channel
 uint8_t currentchannel;
  
