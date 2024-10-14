@@ -1,26 +1,36 @@
 #include <Arduino.h>
+#include <Adafruit_SSD1306.h>
+
 #include "targets.h"
 #include "common.h"
 #include "SX1280Driver.h"
 #include "FHSS.h"
-#include "TimerInterrupt_Generic.h"
-// OLED
-#include <Adafruit_SSD1306.h>
+#include "hwTimer.h"
+
+/******************* define *********************/
+// oled setting
 #define OLED_RESET     4 
 #define SCREEN_WIDTH   128 
 #define SCREEN_HEIGHT  64
-Adafruit_SSD1306 display(OLED_RESET);
-// send rate
-uint16_t sendcount;
-uint16_t sendfreq;
-// 1s timer
-#define TIMER_INTERVAL_MS 1000000
-STM32Timer ITimer(TIM1);
-// Packet
+// packet type
 #define PacketType_BIND   0
 #define PacketType_DATA   1  
 #define PacketType_SYNC   2  
+
 #define payloadsize       5
+#define FHSShopInterval   4
+
+/***************** class *************************/
+Adafruit_SSD1306 display(OLED_RESET);
+
+
+/***************** global variable ***************/
+// send rate
+uint16_t sendcount;
+uint16_t sendfreq;
+// now time
+uint32_t now;
+// packet struct
 WORD_ALIGNED_ATTR typedef struct __attribute__((packed)) {
     uint8_t   type:2,
               IntervalCount:6;
@@ -29,17 +39,19 @@ WORD_ALIGNED_ATTR typedef struct __attribute__((packed)) {
     uint8_t   payload[payloadsize];
 } Packet_t;
 Packet_t packet;
-// 1byte tx data
+// send data
 uint8_t tx_data;
-// indicate TXBusyStatus
+// transmit status
 volatile bool busyTransmitting;
-// BIND
+// bind status
 bool inBindingMode;
+// send bind packet count
 uint8_t bindcount;
-// FHSS
-uint8_t FHSShopInterval = 4;    
+// FHSS hop count 
 uint8_t IntervalCount = 0;
+// current freq
 uint32_t currentFreq = 0;
+
 
 // 设置SX1280速率
 void SetRFLinkRate(uint8_t index)
@@ -88,9 +100,19 @@ void handleButtonPress()
 // 处理定时器中断 输出发包频率
 void TimerHandler() 
 {
-  Serial.println(sendfreq);
-  sendfreq = sendcount;
-  sendcount = 0;
+    if(!inBindingMode)
+    {
+        packet.type = PacketType_DATA;
+        packet.IntervalCount = IntervalCount;
+        packet.currentchannel = FHSSgetCurrIndex();
+        packet.payloadSize = 1;
+        memcpy(packet.payload, &tx_data, packet.payloadSize);
+        tx_data++;
+        // send
+        busyTransmitting = true;
+        Radio.TXnb((uint8_t*)&packet, 8, SX12XX_Radio_1);
+        while(!inBindingMode && busyTransmitting){yield();}
+    }
 }
 // 处理发送完毕中断
 void ICACHE_RAM_ATTR TXdoneCallback()
@@ -138,7 +160,9 @@ void setup()
     Radio.Begin(FHSSgetMinimumFreq(), FHSSgetMaximumFreq());
     SetRFLinkRate(enumRatetoIndex(RATE_LORA_500HZ));
     // timer
-    ITimer.attachInterruptInterval(TIMER_INTERVAL_MS, TimerHandler);
+    // ITimer.attachInterruptInterval(TIMER_INTERVAL_MS, TimerHandler);
+    hwTimer::init(nullptr, TimerHandler);
+    hwTimer::resume();
     // OLED display
     display.clearDisplay();  
     // UID 
@@ -153,10 +177,17 @@ void setup()
     display.setCursor(90, 0);            
     display.println(UID[5]);
     display.display();
+    now = millis();
 }
 // 主循环
 void loop()
 {
+    if(millis() - now >= 1000)
+    {
+        Serial.println(sendcount);
+        sendcount = 0;
+        now = millis();
+    }
     if(inBindingMode)
     { 
         // load
@@ -176,20 +207,20 @@ void loop()
         // exit
         exitbindingmode();
     }
-    else
-    {
-        // load
-        packet.type = PacketType_DATA;
-        packet.IntervalCount = IntervalCount;
-        packet.currentchannel = FHSSgetCurrIndex();
-        packet.payloadSize = 1;
-        memcpy(packet.payload, &tx_data, packet.payloadSize);
-        tx_data++;
-        // send
-        busyTransmitting = true;
-        Radio.TXnb((uint8_t*)&packet, 8, SX12XX_Radio_1);
-        while(!inBindingMode && busyTransmitting){yield();}
-    }
+    // else
+    // {
+    //     // load
+    //     packet.type = PacketType_DATA;
+    //     packet.IntervalCount = IntervalCount;
+    //     packet.currentchannel = FHSSgetCurrIndex();
+    //     packet.payloadSize = 1;
+    //     memcpy(packet.payload, &tx_data, packet.payloadSize);
+    //     tx_data++;
+    //     // send
+    //     busyTransmitting = true;
+    //     Radio.TXnb((uint8_t*)&packet, 8, SX12XX_Radio_1);
+    //     while(!inBindingMode && busyTransmitting){yield();}
+    // }
 }
 
 
