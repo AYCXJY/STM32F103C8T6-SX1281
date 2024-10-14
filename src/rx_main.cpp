@@ -60,8 +60,6 @@ void SetRFLinkRate(uint8_t index, bool bindMode) // Set speed of RF link
 {
     expresslrs_mod_settings_s *const ModParams = get_elrs_airRateConfig(index);
     expresslrs_rf_pref_params_s *const RFperf = get_elrs_RFperfParams(index);
-    // Binding always uses invertIQ
-    bool invertIQ = bindMode || (UID[5] & 0x01);
 
     uint32_t interval = ModParams->interval;
     hwTimer::updateInterval(interval);
@@ -70,7 +68,7 @@ void SetRFLinkRate(uint8_t index, bool bindMode) // Set speed of RF link
     FHSSuseDualBand = ModParams->radio_type == RADIO_TYPE_LR1121_LORA_DUAL;
 
     Radio.Config(ModParams->bw, ModParams->sf, ModParams->cr, FHSSgetInitialFreq(),
-                 ModParams->PreambleLen, invertIQ, ModParams->PayloadLength, 0
+                 ModParams->PreambleLen, 0, ModParams->PayloadLength, 0
                  , uidMacSeedGet(), 0, (ModParams->radio_type == RADIO_TYPE_SX128x_FLRC));
 
 
@@ -122,7 +120,15 @@ void tick()
 
 void tock() 
 {
- 
+    static uint16_t count = 0;
+    count++;
+    if(count % 500 == 0)
+    {
+        receivefreq = receivecount;
+        receivecount = 0;
+        count = 0;
+        // Serial.println(receivecount);
+    }
 }
 
 bool ICACHE_RAM_ATTR RXdoneCallback(SX12xxDriverCommon::rx_status const status)
