@@ -9,16 +9,16 @@
 
 #include "elrs_eeprom.h"
 #include "PFD.h"
+#include "LowPassFilter.h"
+
+#define airRate RATE_LORA_150HZ
 
 
-#define airRate RATE_LORA_500HZ
 
-
-// oled setting
 #define OLED_RESET        4 
 #define SCREEN_WIDTH      128 
 #define SCREEN_HEIGHT     64
-// packet type
+
 #define PacketType_BIND   0
 #define PacketType_DATA   1  
 #define PacketType_SYNC   2  
@@ -26,13 +26,14 @@
 
 #define UID_IS_BOUND(uid) (uid[2] != 255 || uid[3] != 255 || uid[4] != 255 || uid[5] != 255)
 
-#define PACKET_TO_TOCK_SLACK 200 // Desired buffer time between Packet ISR and Tock ISR
-/***************** class *************************/
+#define PACKET_TO_TOCK_SLACK 200
+
 Adafruit_SSD1306 display(OLED_RESET);
+
 ELRS_EEPROM eeprom;
+
 PFD PFDloop;
-/***************** global variable ***************/
-// packet struct
+
 WORD_ALIGNED_ATTR typedef struct __attribute__((packed)) {
     uint8_t   type:2,
               IntervalCount:6;
@@ -41,26 +42,26 @@ WORD_ALIGNED_ATTR typedef struct __attribute__((packed)) {
     uint8_t   payload[payloadsize];
 } Packet_t;
 Packet_t packet;
-// recieve rate
+
 uint16_t receivecount;
 uint16_t receivefreq;
-// now time
-uint32_t now;
-// receive data
+
 uint8_t rx_data;
-// bind status
+
 bool inBindingMode;
-uint8_t ExpressLRS_nextAirRateIndex;
-// FHSS hop count 
-bool didFHSS = false;
-bool alreadyFHSS = false;
-bool alreadyTLMresp = false;
 volatile uint8_t OtaNonce;
-// current freq
 uint32_t currentFreq;
-// currunt channel
 uint8_t currentchannel;
- 
+uint8_t uplinkLQ;
+LPF LPF_Offset(2);
+LPF LPF_OffsetDx(4);
+int32_t PfdPrevRawOffset;
+RXtimerState_e RXtimerState;
+
+uint32_t ticktime;
+uint32_t tocktime;
+uint32_t rxdonetime;
+
 
 void SetRFLinkRate(uint8_t index, bool bindMode)
 {
@@ -83,13 +84,13 @@ void SetRFLinkRate(uint8_t index, bool bindMode)
 
     ExpressLRS_currAirRate_Modparams = ModParams;
     ExpressLRS_currAirRate_RFperfParams = RFperf;
-    ExpressLRS_nextAirRateIndex = index; // presumably we just handled this
 }
 
 void exitbindingmode(void)
 {
     if(inBindingMode == true)
     {
+        hwTimer::resume();
         inBindingMode = false;
         SetRFLinkRate(enumRatetoIndex(airRate), false);
         currentchannel = 0;
@@ -106,6 +107,7 @@ void enterbindingmode(void)
 {
     if(inBindingMode == false)
     {
+        hwTimer::stop();
         inBindingMode = true;
         SetRFLinkRate(enumRatetoIndex(RATE_BINDING), true);
         currentchannel = 0;
@@ -118,9 +120,9 @@ void enterbindingmode(void)
 
 void handleButtonPress() 
 {
-  enterbindingmode();
+    Serial.println("Button Pressed");
+    enterbindingmode();
 }
-
 
 void OLEDdisplayDebugInfo()
 {
@@ -174,28 +176,70 @@ void OLEDdisplayDebugInfo()
     display.display();
 }
 
-void tick() 
+void ICACHE_RAM_ATTR updatePhaseLock()
 {
-    // Serial.println("tick");
-    // Serial.println(millis());
+    if (PFDloop.hasResult())
+    {
+        int32_t RawOffset = PFDloop.calcResult();
+        int32_t Offset = LPF_Offset.update(RawOffset);
+        int32_t OffsetDx = LPF_OffsetDx.update(RawOffset - PfdPrevRawOffset);
+        PfdPrevRawOffset = RawOffset;
+
+        if (Offset > 0)
+        {
+            hwTimer::incFreqOffset();
+        }
+        else if (Offset < 0)
+        {
+            hwTimer::decFreqOffset();
+        }
+        if(tocktime > 500)
+            hwTimer::phaseShift(Offset >> 2);
+        else
+            hwTimer::phaseShift(RawOffset >> 1);
+
+        // Serial.println(String(Offset) + String(RawOffset) + String(OffsetDx) + String(hwTimer::getFreqOffset()) + uplinkLQ);
+        UNUSED(OffsetDx); // complier warning if no debug
+    }
+
+    PFDloop.reset();
 }
 
-void tock() 
+void ICACHE_RAM_ATTR timerCallbacktick()
 {
-    static uint16_t count = 0;
-    count++;
-    if(count % 500 == 0)
-    {
+    updatePhaseLock();
+    OtaNonce++;
+
+    static uint16_t tockcount;
+    if(tockcount >= (1000000 / ExpressLRS_currAirRate_Modparams->interval)){
+        tockcount = 0;
         receivefreq = receivecount;
         receivecount = 0;
-        count = 0;
-        // Serial.println(receivecount);
     }
+    tockcount++;
+
+    // Serial.print("             tick interval " + String(micros() - ticktime));
+    ticktime = micros();
+    // Serial.println("                               tick " + String(ticktime - tocktime));
 }
 
+void ICACHE_RAM_ATTR timerCallbacktock()
+{
+    // Serial.println("tock interval " + String(micros() - tocktime));
+    tocktime = micros();
+    Serial.println("tock " + String(tocktime - rxdonetime));
+    PFDloop.intEvent(micros()); // our internal osc just fired
+
+}
 
 bool ICACHE_RAM_ATTR RXdoneCallback(SX12xxDriverCommon::rx_status const status)
 {
+    // Serial.println("rxdone interval " + String(micros() - rxdonetime));
+    rxdonetime = micros();
+    // Serial.println("rxdone " + String(rxdonetime));
+    uint32_t const beginProcessing = micros();
+    PFDloop.extEvent(beginProcessing + PACKET_TO_TOCK_SLACK);
+
     Packet_t* const PktPtr = (Packet_t* const)(void*)Radio.RXdataBuffer;
     if(inBindingMode && PktPtr->type == PacketType_BIND)
     {
@@ -209,8 +253,7 @@ bool ICACHE_RAM_ATTR RXdoneCallback(SX12xxDriverCommon::rx_status const status)
       receivecount++;
       memcpy(&rx_data, PktPtr->payload, 1);
       currentchannel = PktPtr->currentchannel;
-      OtaNonce = PktPtr->IntervalCount;
-      if(OtaNonce == ExpressLRS_currAirRate_Modparams->FHSShopInterval - 1)
+      if((OtaNonce + 1) % ExpressLRS_currAirRate_Modparams->FHSShopInterval == 0)
       {
         currentFreq = FHSSgetNextFreq();
         Radio.SetFrequencyReg(currentFreq);
@@ -248,7 +291,7 @@ void setup()
     // 开启连续接收模式
     Radio.RXnb(SX1280_MODE_RX_CONT);
     // timer
-    hwTimer::init(tick, tock);
+    hwTimer::init(timerCallbacktick, timerCallbacktock);
     hwTimer::resume();
     // eeprom
     eeprom.Begin();
@@ -261,5 +304,13 @@ void setup()
 
 void loop()
 {
-   OLEDdisplayDebugInfo();
+    // static uint32_t now = millis();
+    // if(millis() - now >= 1000)
+    // {
+    //     now = millis();
+    //     receivefreq = receivecount;
+    //     receivecount = 0;
+    // }
+
+    OLEDdisplayDebugInfo();
 }

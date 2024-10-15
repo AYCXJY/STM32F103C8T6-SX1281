@@ -8,7 +8,7 @@
 #include "hwTimer.h"
 
 
-#define airRate RATE_LORA_500HZ
+#define airRate RATE_LORA_150HZ
 
 
 // oled setting
@@ -196,20 +196,20 @@ void OLEDdisplayDebugInfo()
 
 void ICACHE_RAM_ATTR timerCallback()
 {
-    static uint16_t tockcount;
+        static uint16_t tockcount;
 
-    if(!inBindingMode)
-    {
-        // 记录每秒发包数
-        if(tockcount >= (1000000 / ExpressLRS_currAirRate_Modparams->interval))
+        if(!inBindingMode)
         {
-            tockcount = 0;
-            sendfreq = sendcount;
-            sendcount = 0;
+            // 记录每秒发包数
+            if(tockcount >= (1000000 / ExpressLRS_currAirRate_Modparams->interval))
+            {
+                tockcount = 0;
+                sendfreq = sendcount;
+                sendcount = 0;
+            }
+            sendData();
         }
-        sendData();
-    }
-    tockcount++;
+        tockcount++;
 }
 
 void ICACHE_RAM_ATTR TXdoneCallback()
