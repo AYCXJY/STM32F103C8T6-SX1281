@@ -16,15 +16,9 @@
 #define PacketType_BIND   0
 #define PacketType_DATA   1  
 #define PacketType_SYNC   2  
-
 #define payloadsize       5
 #define FHSShopInterval   4
-
-/***************** class *************************/
 Adafruit_SSD1306 display(OLED_RESET);
-
-/***************** global variable ***************/
-// packet struct
 WORD_ALIGNED_ATTR typedef struct __attribute__((packed)) {
     uint8_t   type:2,
               IntervalCount:6;
@@ -70,15 +64,15 @@ void SetRFLinkRate(uint8_t index) // Set speed of RF link
                  ModParams->PreambleLen, 0, ModParams->PayloadLength, 0
                  , uidMacSeedGet(), 0, (ModParams->radio_type == RADIO_TYPE_SX128x_FLRC));
 
-  Radio.FuzzySNRThreshold = (RFperf->DynpowerSnrThreshUp == DYNPOWER_SNR_THRESH_NONE) ? 0 : (RFperf->DynpowerSnrThreshUp - RFperf->DynpowerSnrThreshDn);
+    Radio.FuzzySNRThreshold = (RFperf->DynpowerSnrThreshUp == DYNPOWER_SNR_THRESH_NONE) ? 0 : (RFperf->DynpowerSnrThreshUp - RFperf->DynpowerSnrThreshDn);
 
 
-  // InitialFreq has been set, so lets also reset the FHSS Idx and Nonce.
-  FHSSsetCurrIndex(0);
-  OtaNonce = 0;
+    // InitialFreq has been set, so lets also reset the FHSS Idx and Nonce.
+    FHSSsetCurrIndex(0);
+    OtaNonce = 0;
 
-  ExpressLRS_currAirRate_Modparams = ModParams;
-  ExpressLRS_currAirRate_RFperfParams = RFperf;
+    ExpressLRS_currAirRate_Modparams = ModParams;
+    ExpressLRS_currAirRate_RFperfParams = RFperf;
 }
 // 从MCU获得UID
 static void setupBindingFromConfig()
