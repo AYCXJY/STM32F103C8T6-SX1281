@@ -6,24 +6,27 @@
 #include "SX1280Driver.h"
 #include "FHSS.h"
 #include "hwTimer.h"
+
 #include "elrs_eeprom.h"
 #include "PFD.h"
 
-/******************* define *********************/
+
+#define airRate RATE_LORA_500HZ
+
+
 // oled setting
-#define OLED_RESET     4 
-#define SCREEN_WIDTH   128 
-#define SCREEN_HEIGHT  64
+#define OLED_RESET        4 
+#define SCREEN_WIDTH      128 
+#define SCREEN_HEIGHT     64
 // packet type
 #define PacketType_BIND   0
 #define PacketType_DATA   1  
 #define PacketType_SYNC   2  
-
 #define payloadsize       5
-#define FHSShopInterval   4
 
 #define UID_IS_BOUND(uid) (uid[2] != 255 || uid[3] != 255 || uid[4] != 255 || uid[5] != 255)
 
+#define PACKET_TO_TOCK_SLACK 200 // Desired buffer time between Packet ISR and Tock ISR
 /***************** class *************************/
 Adafruit_SSD1306 display(OLED_RESET);
 ELRS_EEPROM eeprom;
@@ -49,6 +52,9 @@ uint8_t rx_data;
 bool inBindingMode;
 uint8_t ExpressLRS_nextAirRateIndex;
 // FHSS hop count 
+bool didFHSS = false;
+bool alreadyFHSS = false;
+bool alreadyTLMresp = false;
 volatile uint8_t OtaNonce;
 // current freq
 uint32_t currentFreq;
@@ -56,7 +62,7 @@ uint32_t currentFreq;
 uint8_t currentchannel;
  
 
-void SetRFLinkRate(uint8_t index, bool bindMode) // Set speed of RF link
+void SetRFLinkRate(uint8_t index, bool bindMode)
 {
     expresslrs_mod_settings_s *const ModParams = get_elrs_airRateConfig(index);
     expresslrs_rf_pref_params_s *const RFperf = get_elrs_RFperfParams(index);
@@ -82,15 +88,18 @@ void SetRFLinkRate(uint8_t index, bool bindMode) // Set speed of RF link
 
 void exitbindingmode(void)
 {
-    inBindingMode = false;
-    SetRFLinkRate(enumRatetoIndex(RATE_LORA_500HZ), false);
-    currentchannel = 0;
-    FHSSsetCurrIndex(currentchannel);
-    currentFreq = FHSSgetInitialFreq();
-    Radio.SetFrequencyReg(currentFreq);
-    Radio.RXnb(SX1280_MODE_RX_CONT);
+    if(inBindingMode == true)
+    {
+        inBindingMode = false;
+        SetRFLinkRate(enumRatetoIndex(airRate), false);
+        currentchannel = 0;
+        FHSSsetCurrIndex(currentchannel);
+        currentFreq = FHSSgetInitialFreq();
+        Radio.SetFrequencyReg(currentFreq);
+        Radio.RXnb(SX1280_MODE_RX_CONT);
 
-    FHSSrandomiseFHSSsequence(uidMacSeedGet());
+        FHSSrandomiseFHSSsequence(uidMacSeedGet());
+    }
 }
 
 void enterbindingmode(void)
@@ -112,6 +121,59 @@ void handleButtonPress()
   enterbindingmode();
 }
 
+
+void OLEDdisplayDebugInfo()
+{
+    display.clearDisplay();  
+
+    if(inBindingMode)
+    {            
+        display.setCursor(0, 0);            
+        display.println("receiving UID...");
+    }
+    else
+    {
+        // UID          
+        display.setCursor(0, 0);           
+        display.println("ID");         
+        display.setCursor(18, 0);            
+        display.println(UID[2]);
+        display.setCursor(42, 0);            
+        display.println(UID[3]);
+        display.setCursor(66, 0);            
+        display.println(UID[4]);
+        display.setCursor(90, 0);            
+        display.println(UID[5]);    
+        // Data 
+        display.setCursor(0, 16);           
+        display.println("Data");  
+        display.setCursor(30, 16);           
+        display.println(rx_data);  
+        // Rate
+        display.setCursor(0, 24);   
+        display.println("Rate");     
+        display.setCursor(30, 24);         
+        display.println(receivefreq);  
+    }
+    // Freq
+    display.setCursor(0, 8);           
+    display.println("FQ");    
+    display.setCursor(18, 8);           
+    display.println(currentFreq);  
+    // Channel
+    display.setCursor(76, 8);           
+    display.println("CH");  
+    display.setCursor(94, 8);           
+    display.println(currentchannel);  
+    // RSSI
+    display.setCursor(54, 24);     
+    display.println("RSSI");     
+    display.setCursor(84, 24);           
+    display.println(Radio.GetRssiInst(SX12XX_Radio_1)); 
+
+    display.display();
+}
+
 void tick() 
 {
     // Serial.println("tick");
@@ -131,6 +193,7 @@ void tock()
     }
 }
 
+
 bool ICACHE_RAM_ATTR RXdoneCallback(SX12xxDriverCommon::rx_status const status)
 {
     Packet_t* const PktPtr = (Packet_t* const)(void*)Radio.RXdataBuffer;
@@ -147,7 +210,7 @@ bool ICACHE_RAM_ATTR RXdoneCallback(SX12xxDriverCommon::rx_status const status)
       memcpy(&rx_data, PktPtr->payload, 1);
       currentchannel = PktPtr->currentchannel;
       OtaNonce = PktPtr->IntervalCount;
-      if(OtaNonce == FHSShopInterval - 1)
+      if(OtaNonce == ExpressLRS_currAirRate_Modparams->FHSShopInterval - 1)
       {
         currentFreq = FHSSgetNextFreq();
         Radio.SetFrequencyReg(currentFreq);
@@ -181,7 +244,7 @@ void setup()
     Radio.RXdoneCallback = &RXdoneCallback;
     currentFreq = FHSSgetInitialFreq(); 
     Radio.Begin(FHSSgetMinimumFreq(), FHSSgetMaximumFreq());
-    SetRFLinkRate(enumRatetoIndex(RATE_LORA_500HZ), false);
+    SetRFLinkRate(enumRatetoIndex(airRate), false);
     // 开启连续接收模式
     Radio.RXnb(SX1280_MODE_RX_CONT);
     // timer
@@ -198,50 +261,5 @@ void setup()
 
 void loop()
 {
-    display.clearDisplay();  
-    if(inBindingMode)
-    {            
-        display.setCursor(0, 0);            
-        display.println("receiving UID...");
-    }
-    else
-    {
-        // UID          
-        display.setCursor(0, 0);           
-        display.println("ID");         
-        display.setCursor(18, 0);            
-        display.println(UID[2]);
-        display.setCursor(42, 0);            
-        display.println(UID[3]);
-        display.setCursor(66, 0);            
-        display.println(UID[4]);
-        display.setCursor(90, 0);            
-        display.println(UID[5]);
-    }
-    // Freq
-    display.setCursor(0, 8);           
-    display.println("FQ");    
-    display.setCursor(18, 8);           
-    display.println(currentFreq);  
-    // Channel
-    display.setCursor(76, 8);           
-    display.println("CH");  
-    display.setCursor(94, 8);           
-    display.println(currentchannel);  
-    // Data 
-    display.setCursor(0, 16);           
-    display.println("Data");  
-    display.setCursor(30, 16);           
-    display.println(rx_data);  
-    // Rate
-    display.setCursor(0, 24);   
-    display.println("Rate");     
-    display.setCursor(30, 24);         
-    display.println(receivefreq);   
-    // RSSI
-    display.setCursor(54, 24);     
-    display.println("RSSI");     
-    display.setCursor(84, 24);           
-    display.println(Radio.GetRssiInst(SX12XX_Radio_1));  
-    display.display();
+   OLEDdisplayDebugInfo();
 }
