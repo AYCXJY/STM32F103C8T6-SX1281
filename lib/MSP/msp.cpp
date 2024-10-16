@@ -1,6 +1,6 @@
 #include "msp.h"
 
-#include "logging.h"
+// #include "logging.h"
 
 /* ==========================================
 MSP V2 Message Structure:
@@ -118,7 +118,8 @@ MSP::processReceivedByte(uint8_t c)
                 m_inputState = MSP_COMMAND_RECEIVED;
             }
             else {
-                DBGLN("CRC failure on MSP packet - Got %d expected %d", c, m_crc);
+                // DBGLN("CRC failure on MSP packet - Got %d expected %d", c, m_crc);
+                Serial.println("CRC failure on MSP packet - Got " + String(c) + " expected " + String(m_crc));
                 m_inputState = MSP_IDLE;
             }
             break;

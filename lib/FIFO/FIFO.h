@@ -95,7 +95,8 @@ public:
     {
         if (numElements == FIFO_SIZE)
         {
-            ERRLN("Buffer full, will flush");
+            // ERRLN("Buffer full, will flush");
+            Serial.println("Buffer full, will flush");
             flush();
             return;
         }
@@ -117,7 +118,8 @@ public:
     {
         if (numElements + len > FIFO_SIZE)
         {
-            ERRLN("Buffer full, will flush");
+            // ERRLN("Buffer full, will flush");
+            Serial.println("Buffer full, will flush");
             flush();
             return;
         }

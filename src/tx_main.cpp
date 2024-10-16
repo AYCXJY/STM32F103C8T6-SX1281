@@ -6,9 +6,9 @@
 #include "SX1280Driver.h"
 #include "FHSS.h"
 #include "hwTimer.h"
+// #include "OTA.h"
 
-
-#define airRate RATE_LORA_500HZ
+#define airRate RATE_LORA_250HZ
 
 
 // oled setting
@@ -106,11 +106,6 @@ void enterbindingmode(void)
         currentFreq = FHSSgetInitialFreq();
         Radio.SetFrequencyReg(currentFreq);
     }   
-}
-
-void handleButtonPress()
-{
-  enterbindingmode();
 }
 
 void sendData(void)
@@ -231,7 +226,7 @@ void setup()
     pinMode(PC13, OUTPUT);
     // Button
     pinMode(PB1, INPUT_PULLUP);            
-    attachInterrupt(digitalPinToInterrupt(PB1), handleButtonPress, FALLING);  
+    attachInterrupt(digitalPinToInterrupt(PB1), enterbindingmode, FALLING);  
     // OLED
     Wire.setSCL(PB8);
     Wire.setSDA(PB9);

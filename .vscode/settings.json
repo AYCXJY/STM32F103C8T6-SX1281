@@ -1,6 +1,7 @@
 {
     "C_Cpp.errorSquiggles": "enabled",
     "files.associations": {
-        "algorithm": "cpp"
+        "algorithm": "cpp",
+        "cassert": "cpp"
     }
 }
