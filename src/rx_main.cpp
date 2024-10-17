@@ -26,8 +26,6 @@ STM32Timer ITimer(TIM2);
 #define PacketType_SYNC   2  
 #define payloadsize       5
 
-#define UID_IS_BOUND(uid) (uid[2] != 255 || uid[3] != 255 || uid[4] != 255 || uid[5] != 255)
-
 #define PACKET_TO_TOCK_SLACK 200
 
 Adafruit_SSD1306 display(OLED_RESET);
