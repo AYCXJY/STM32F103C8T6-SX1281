@@ -12,7 +12,7 @@
 #include "PFD.h"
 #include "LowPassFilter.h"
 
-#define airRate RATE_LORA_250HZ
+#define airRate RATE_LORA_500HZ
 
 #define TIMER_INTERVAL_MS 1000000
 STM32Timer ITimer(TIM2);

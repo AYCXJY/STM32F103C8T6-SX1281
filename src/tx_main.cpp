@@ -3,13 +3,36 @@
 
 #include "targets.h"
 #include "common.h"
+// #include "config.h"
+#include "CRSF.h"
 #include "FHSS.h"
+// #include "helpers.h"
 #include "hwTimer.h"
+// #include "logging.h"
+// #include "LBT.h"
+#include "LQCALC.h"
 #include "OTA.h"
+// #include "POWERMGNT.h"
+// #include "deferred.h"
+
+// #include "CRSFHandset.h"
+// #include "dynpower.h"
+// #include "lua.h"
+#include "msp.h"
+#include "msptypes.h"
+#include "telemetry_protocol.h"
+#include "stubborn_receiver.h"
+#include "stubborn_sender.h"
 
 
-#define airRate RATE_LORA_250HZ
+#define airRate RATE_LORA_50HZ
 
+#define syncSpamAmount 3
+#define syncSpamAmountAfterRateChange 10
+volatile uint8_t syncSpamCounter = 0;
+volatile uint8_t syncSpamCounterAfterRateChange = 0;
+uint32_t rfModeLastChangedMS = 0;
+uint32_t SyncPacketLastSent = 0;
 
 // oled setting
 #define OLED_RESET     4 
@@ -32,12 +55,8 @@ Packet_t packet;
 // send rate
 uint16_t sendcount;
 uint16_t sendfreq;
-// send data
-uint8_t tx_data;
-// bind status
-bool inBindingMode;
-// FHSS hop count 
-volatile uint8_t OtaNonce;
+static uint32_t now;
+
 // current freq
 uint32_t currentFreq;
 // currunt channel
@@ -88,9 +107,9 @@ static void setupBindingFromConfig()
 
 void exitbindingmode(void)
 {
-    if(inBindingMode == true)
+    if(InBindingMode == true)
     {
-        inBindingMode = false;  
+        InBindingMode = false;  
         SetRFLinkRate(enumRatetoIndex(airRate));
         currentFreq = FHSSgetInitialFreq();
         Radio.SetFrequencyReg(currentFreq);
@@ -99,29 +118,23 @@ void exitbindingmode(void)
 
 void enterbindingmode(void)
 {
-    if(inBindingMode == false)
+    if(InBindingMode == false)
     {
-        inBindingMode = true;
+        InBindingMode = true;
         SetRFLinkRate(enumRatetoIndex(RATE_BINDING));
         currentFreq = FHSSgetInitialFreq();
         Radio.SetFrequencyReg(currentFreq);
     }   
 }
 
-void sendData(void)
+void ICACHE_RAM_ATTR HandleFHSS()
 {
-    // make data packet
-    packet.type = PacketType_DATA;
-    packet.IntervalCount = OtaNonce;
-    currentchannel = FHSSgetCurrIndex();
-    packet.currentchannel = currentchannel;
-    packet.payloadSize = 1;
-    memcpy(packet.payload, &tx_data, packet.payloadSize);
-    tx_data++;
-    // send data packet
-    busyTransmitting = true;
-    Radio.TXnb((uint8_t*)&packet, 8, SX12XX_Radio_1);
-    while(!inBindingMode && busyTransmitting){yield();}
+    uint8_t modresult = (OtaNonce + 1) % ExpressLRS_currAirRate_Modparams->FHSShopInterval;
+    // If the next packet should be on the next FHSS frequency, do the hop
+    if (!InBindingMode && modresult == 0)
+    {
+        Radio.SetFrequencyReg(FHSSgetNextFreq());
+    }
 }
 
 void sendUID(void)
@@ -146,7 +159,7 @@ void OLEDdisplayDebugInfo()
 {
     display.clearDisplay();  
 
-    if(inBindingMode)
+    if(InBindingMode)
     {            
         display.setCursor(0, 0);            
         display.println("sending UID...");
@@ -164,11 +177,6 @@ void OLEDdisplayDebugInfo()
         display.println(UID[4]);
         display.setCursor(90, 0);            
         display.println(UID[5]);    
-                // Data 
-        display.setCursor(0, 16);           
-        display.println("Data");  
-        display.setCursor(30, 16);           
-        display.println(tx_data);  
         // Rate
         display.setCursor(0, 24);   
         display.println("Rate");     
@@ -191,30 +199,15 @@ void OLEDdisplayDebugInfo()
 
 void ICACHE_RAM_ATTR timerCallback()
 {
-    OtaNonce++;
-    if(OtaNonce % ExpressLRS_currAirRate_Modparams->FHSShopInterval == 0 && !busyTransmitting)
-    {
-        OtaNonce = 0;
-        currentFreq = FHSSgetNextFreq();
-        Radio.SetFrequencyReg(currentFreq);
-    }
-    static uint16_t tockcount;
-    if(!inBindingMode)
-    {
-        // 记录每秒发包数
-        if(tockcount >= (1000000 / ExpressLRS_currAirRate_Modparams->interval))
-        {
-            tockcount = 0;
-            sendfreq = sendcount;
-            sendcount = 0;
-        }
-        sendData();
-    }
-    tockcount++;
+    if (!InBindingMode)
+        OtaNonce++;
+
+    SendRCdataToRF();
 }
 
-void ICACHE_RAM_ATTR TXdoneCallback()
+void ICACHE_RAM_ATTR TXdoneISR()
 {
+    HandleFHSS();
     sendcount++;
     busyTransmitting = false;
 }
@@ -241,7 +234,7 @@ void setup()
     FHSSrandomiseFHSSsequence(uidMacSeedGet());
     pinMode(GPIO_PIN_TX_EN, OUTPUT);
     pinMode(GPIO_PIN_RX_EN, OUTPUT);
-    Radio.TXdoneCallback = &TXdoneCallback;
+    Radio.TXdoneCallback = &TXdoneISR;
     currentFreq = FHSSgetInitialFreq(); 
     Radio.Begin(FHSSgetMinimumFreq(), FHSSgetMaximumFreq());
     SetRFLinkRate(enumRatetoIndex(airRate));
@@ -252,13 +245,12 @@ void setup()
 
 void loop()
 {
-    if(inBindingMode)
-    { 
+    if(InBindingMode)
+    {
         OLEDdisplayDebugInfo();
         sendUID();
         exitbindingmode();
     }
-
     OLEDdisplayDebugInfo();
 }
 
