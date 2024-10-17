@@ -17,7 +17,7 @@ public:
     static void AddMspMessage(mspPacket_t *packet, uint8_t destination);
     static void ResetMspQueue();
 
-    static void GetDeviceInformation(uint8_t *frame, uint8_t fieldCount);
+    // static void GetDeviceInformation(uint8_t *frame, uint8_t fieldCount);
     static void SetMspV2Request(uint8_t *frame, uint16_t function, uint8_t *payload, uint8_t payloadLength);
     static void SetHeaderAndCrc(uint8_t *frame, crsf_frame_type_e frameType, uint8_t frameSize, crsf_addr_e destAddr);
     static void SetExtendedHeaderAndCrc(uint8_t *frame, crsf_frame_type_e frameType, uint8_t frameSize, crsf_addr_e senderAddr, crsf_addr_e destAddr);

@@ -2,6 +2,9 @@
     "C_Cpp.errorSquiggles": "enabled",
     "files.associations": {
         "algorithm": "cpp",
-        "cassert": "cpp"
+        "cassert": "cpp",
+        "cstddef": "cpp",
+        "cmath": "cpp",
+        "cstdint": "cpp"
     }
 }

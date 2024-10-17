@@ -3,10 +3,10 @@
 
 #include "targets.h"
 #include "common.h"
-#include "SX1280Driver.h"
 #include "FHSS.h"
 #include "hwTimer.h"
-// #include "OTA.h"
+#include "OTA.h"
+
 
 #define airRate RATE_LORA_250HZ
 

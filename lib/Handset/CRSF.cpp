@@ -62,19 +62,19 @@ uint32_t CRSF::VersionStrToU32(const char *verStr)
     return retVal;
 }
 
-void CRSF::GetDeviceInformation(uint8_t *frame, uint8_t fieldCount)
-{
-    const uint8_t size = strlen(device_name)+1;
-    auto *device = (deviceInformationPacket_t *)(frame + sizeof(crsf_ext_header_t) + size);
-    // Packet starts with device name
-    memcpy(frame + sizeof(crsf_ext_header_t), device_name, size);
-    // Followed by the device
-    device->serialNo = htobe32(0x454C5253); // ['E', 'L', 'R', 'S'], seen [0x00, 0x0a, 0xe7, 0xc6] // "Serial 177-714694" (value is 714694)
-    device->hardwareVer = 0; // unused currently by us, seen [ 0x00, 0x0b, 0x10, 0x01 ] // "Hardware: V 1.01" / "Bootloader: V 3.06"
-    device->softwareVer = htobe32(VersionStrToU32(version)); // seen [ 0x00, 0x00, 0x05, 0x0f ] // "Firmware: V 5.15"
-    device->fieldCnt = fieldCount;
-    device->parameterVersion = 0;
-}
+// void CRSF::GetDeviceInformation(uint8_t *frame, uint8_t fieldCount)
+// {
+//     const uint8_t size = strlen(device_name)+1;
+//     auto *device = (deviceInformationPacket_t *)(frame + sizeof(crsf_ext_header_t) + size);
+//     // Packet starts with device name
+//     memcpy(frame + sizeof(crsf_ext_header_t), device_name, size);
+//     // Followed by the device
+//     device->serialNo = htobe32(0x454C5253); // ['E', 'L', 'R', 'S'], seen [0x00, 0x0a, 0xe7, 0xc6] // "Serial 177-714694" (value is 714694)
+//     device->hardwareVer = 0; // unused currently by us, seen [ 0x00, 0x0b, 0x10, 0x01 ] // "Hardware: V 1.01" / "Bootloader: V 3.06"
+//     device->softwareVer = htobe32(VersionStrToU32(version)); // seen [ 0x00, 0x00, 0x05, 0x0f ] // "Firmware: V 5.15"
+//     device->fieldCnt = fieldCount;
+//     device->parameterVersion = 0;
+// }
 
 void CRSF::SetMspV2Request(uint8_t *frame, uint16_t function, uint8_t *payload, uint8_t payloadLength)
 {
