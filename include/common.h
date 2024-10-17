@@ -8,12 +8,12 @@
 #elif defined(RADIO_LR1121)
 #include "LR1121Driver.h"
 #elif defined(RADIO_SX128X)
-#include "SX1280Driver.h"
+#include "SX1280Driver/SX1280Driver.h"  
 #else
 #error "Radio configuration is not valid!"
 #endif
+#endif  // UNIT_TEST
 
-#endif // UNIT_TEST
 
 // Used to XOR with OtaCrcInitializer and macSeed to reduce compatibility with previous versions.
 // It should be incremented when the OTA packet structure is modified.
