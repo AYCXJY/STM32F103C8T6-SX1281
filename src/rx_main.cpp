@@ -67,15 +67,8 @@ uint32_t rxdonetime;
 void TimerHandler() 
 {
     digitalToggle(PC13);
-    static uint16_t count;
-
-    if(count >= (1000000 / ExpressLRS_currAirRate_Modparams->interval))
-    {
-        count = 0;
-        receivefreq = receivecount;
-        receivecount = 0;
-    }
-    count++;
+    receivefreq = receivecount;
+    receivecount = 0;
 }
 
 void SetRFLinkRate(uint8_t index, bool bindMode)
@@ -208,7 +201,7 @@ void ICACHE_RAM_ATTR updatePhaseLock()
         {
             hwTimer::decFreqOffset();
         }
-        if(tocktime > 500)
+        if(tocktime - rxdonetime > 500)
             hwTimer::phaseShift(Offset >> 2);
         else
             hwTimer::phaseShift(RawOffset >> 1);
@@ -237,8 +230,7 @@ void ICACHE_RAM_ATTR timerCallbacktock()
     // Serial.println("tock interval " + String(micros() - tocktime));
     tocktime = micros();
     Serial.println("tock " + String(tocktime - rxdonetime));
-    if(tocktime - rxdonetime < 1000)
-        PFDloop.intEvent(micros()); // our internal osc just fired
+    PFDloop.intEvent(tocktime); // our internal osc just fired
 
 }
 
