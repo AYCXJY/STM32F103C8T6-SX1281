@@ -79,9 +79,9 @@ void FHSSrandomiseFHSSsequence(const uint32_t seed)
     freq_spread = (FHSSconfig->freq_stop - FHSSconfig->freq_start) * FREQ_SPREAD_SCALE / (FHSSconfig->freq_count - 1);
     primaryBandCount = (FHSS_SEQUENCE_LEN / FHSSconfig->freq_count) * FHSSconfig->freq_count;
 
-    Serial.println("Setting Mode: "+ String(FHSSconfig->domain));
-    Serial.println("Number of FHSS frequencies = " + String(FHSSconfig->freq_count));
-    Serial.println("Sync channel = " + String(sync_channel));
+    Serial.println("Domain "+ String(FHSSconfig->domain));
+    Serial.println("Number of FHSS frequencies " + String(FHSSconfig->freq_count));
+    Serial.println("Sync channel " + String(sync_channel));
 
     FHSSrandomiseFHSSsequenceBuild(seed, FHSSconfig->freq_count, sync_channel, FHSSsequence);
 

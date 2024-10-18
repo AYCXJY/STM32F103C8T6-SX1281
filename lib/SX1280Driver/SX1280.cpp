@@ -86,6 +86,7 @@ bool SX1280Driver::Begin(uint32_t minimumFrequency, uint32_t maximumFrequency)
 
     hal.reset();
     // DBGLN("SX1280 Begin");
+    Serial.println("SX1280 Begin");
 
     RFAMP.init();
 
