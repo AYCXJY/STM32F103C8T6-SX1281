@@ -1,7 +1,7 @@
 #include <cstdint>
 #include <cstring>
 #include "telemetry.h"
-#include "logging.h"
+// #include "logging.h"
 
 #if defined(USE_MSP_WIFI) && defined(TARGET_RX) // enable MSP2WIFI for RX only at the moment
 #include "tcpsocket.h"
