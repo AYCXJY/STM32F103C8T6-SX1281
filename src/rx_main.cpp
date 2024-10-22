@@ -1,6 +1,6 @@
 // 版本：2024/10/21
-// 进度：InvertIQ正常、UID接收正常、EEPROM写入正常、OTA通信正常、OTA-CRC正常；
-// 待办：单次接收与连续接收(单次接收可行)、FHSS跳频与定时器同步(跳频不同步，定时器无法同步)、连接状态与定时器状态（）、OTA同步包
+// 进度：InvertIQ正常、UID接收正常、EEPROM写入正常、OTA通信正常、OTA-CRC正常、
+// 待办：单次接收与连续接收(单次接收可行)、FHSS跳频与定时器同步(跳频判断正常，定时器校准正常)、连接状态与定时器状态（自写简单重连逻辑，实现同步）、OTA同步包（使用部分同步数据）；
 // 思路：禁止Stubborn，模拟通道包发送，测试FHSS和定时器同步；
 // 问题：
 
@@ -330,12 +330,12 @@ void ICACHE_RAM_ATTR updatePhaseLock() // ELRS移植，注释源码另起修改
                 }
             }
         }
-        if (slack > 500)
-        // if (connectionState != connected)
-        {
-            hwTimer::phaseShift(RawOffset >> 1);
-        }
-        else
+        // if (slack > 500)
+        // // if (connectionState != connected)
+        // {
+        //     hwTimer::phaseShift(RawOffset >> 1);
+        // }
+        // else
         {
             hwTimer::phaseShift(Offset >> 2);
         }
@@ -390,7 +390,8 @@ void ICACHE_RAM_ATTR HWtimerCallbackTock() // ELRS移植，注释源码另起修
     // User code
     tocktime = micros();
     slack = tocktime - RxISRtime;
-    // Serial.println("SLACK " + String(slack));
+    if(slack > 300)
+        Serial.println("SLACK " + String(slack));
 
     PFDloop.intEvent(micros()); // our internal osc just fired
 
@@ -567,13 +568,13 @@ static void ICACHE_RAM_ATTR ProcessRfPacket_MSP(OTA_Packet_s const * const otaPk
         packageIndex = otaPktPtr->std.msp_ul.packageIndex;
         payload = otaPktPtr->std.msp_ul.payload;
         dataLen = sizeof(otaPktPtr->std.msp_ul.payload);
-        // User code--show ota msp data
-        Serial.print("recieved data: ");
-        for(int i = 0; i < dataLen; i++)
-        {
-            Serial.print((char)*(payload + i));
-        }
-        Serial.println("");
+        // // User code--show ota msp data
+        // Serial.print("recieved data: ");
+        // for(int i = 0; i < dataLen; i++)
+        // {
+        //     Serial.print((char)*(payload + i));
+        // }
+        // Serial.println("");
 
         // if (config.GetSerialProtocol() == PROTOCOL_MAVLINK)
         // {
