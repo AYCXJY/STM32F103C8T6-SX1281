@@ -136,6 +136,7 @@ bool UIDIsModified = false;
 uint32_t ticktime;
 uint32_t tocktime;
 uint32_t RxISRtime;
+uint32_t slack;
 
 /* ELRS Function*/
 
@@ -305,7 +306,7 @@ int32_t ICACHE_RAM_ATTR HandleFreqCorr(bool value) // ELRS移植，注释源码�
 
 void ICACHE_RAM_ATTR updatePhaseLock() // ELRS移植，注释源码另起修改
 {
-    if (/*connectionState != disconnected && */PFDloop.hasResult())
+    if (/*connectionState != disconnected && */PFDloop.hasResult() && PFDloop.calcResult() < 1000)
     {
         int32_t RawOffset = PFDloop.calcResult();
         int32_t Offset = LPF_Offset.update(RawOffset);
@@ -329,12 +330,12 @@ void ICACHE_RAM_ATTR updatePhaseLock() // ELRS移植，注释源码另起修改
                 }
             }
         }
-        if (tocktime - RxISRtime > 1000)
-        // if (connectionState != connected)
-        {
-            hwTimer::phaseShift(RawOffset >> 1);
-        }
-        else
+        // if (tocktime - RxISRtime > 1000)
+        // // if (connectionState != connected)
+        // {
+        //     hwTimer::phaseShift(RawOffset >> 1);
+        // }
+        // else
         {
             hwTimer::phaseShift(Offset >> 2);
         }
@@ -388,7 +389,8 @@ void ICACHE_RAM_ATTR HWtimerCallbackTock() // ELRS移植，注释源码另起修
 {
     // User code
     tocktime = micros();
-    Serial.println("SLACK " + String(tocktime - RxISRtime));
+    slack = tocktime - RxISRtime;
+    Serial.println("SLACK " + String(slack));
 
     PFDloop.intEvent(micros()); // our internal osc just fired
 
