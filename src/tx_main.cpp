@@ -96,7 +96,7 @@ uint8_t CRSFinBuffer[CRSF_MAX_PACKET_LEN+1];
 #define SCREEN_HEIGHT 64
 Adafruit_SSD1306 display(OLED_RESET);
 
-#define airRate RATE_LORA_250HZ
+#define airRate RATE_LORA_500HZ
 
 uint16_t sendcount;
 uint16_t sendfreq;
@@ -109,6 +109,41 @@ uint8_t waitforTimSyncount;
 STM32Timer ITimer(TIM2);
 
 /* ELRS Function*/
+
+void ICACHE_RAM_ATTR GenerateSyncPacketData(OTA_Sync_s * const syncPtr) // ELRS移植，注释源码另起修改
+{
+  // const uint8_t SwitchEncMode = config.GetSwitchMode();
+  // const uint8_t Index = (syncSpamCounter) ? config.GetRate() : ExpressLRS_currAirRate_Modparams->index;
+
+  // if (syncSpamCounter)
+  //   --syncSpamCounter;
+
+  // if (syncSpamCounterAfterRateChange && Index == ExpressLRS_currAirRate_Modparams->index)
+  // {
+  //   --syncSpamCounterAfterRateChange;
+  //   if (connectionState == connected) // We are connected again after a rate change.  No need to keep spaming sync.
+  //     syncSpamCounterAfterRateChange = 0;
+  // }
+
+  // SyncPacketLastSent = millis();
+
+  // expresslrs_tlm_ratio_e newTlmRatio = UpdateTlmRatioEffective();
+
+  syncPtr->fhssIndex = FHSSgetCurrIndex();
+  syncPtr->nonce = OtaNonce;
+  // syncPtr->rateIndex = Index;
+  // syncPtr->newTlmRatio = newTlmRatio - TLM_RATIO_NO_TLM;
+  // syncPtr->switchEncMode = SwitchEncMode;
+  syncPtr->UID3 = UID[3];
+  syncPtr->UID4 = UID[4];
+  syncPtr->UID5 = UID[5];
+
+  // // For model match, the last byte of the binding ID is XORed with the inverse of the modelId
+  // if (!InBindingMode && config.GetModelMatch())
+  // {
+  //   syncPtr->UID5 ^= (~CRSFHandset::getModelID()) & MODELMATCH_MASK;
+  // }
+}
 
 void SetRFLinkRate(uint8_t index) // ELRS移植，注释源码另起修改
 {
@@ -205,7 +240,7 @@ void ICACHE_RAM_ATTR HandleFHSS() // ELRS移植，注释源码另起修改
     //     }
     // }
     // else
-    if(waitforTimSyncount == 0)
+    // if(waitforTimSyncount == 0)
     {
       Radio.SetFrequencyReg(FHSSgetNextFreq());
     }
@@ -246,24 +281,24 @@ void ICACHE_RAM_ATTR SendRCdataToRF() // ELRS移植，注释源码另起修改
 //     // TLM_RATIO_DISARMED keeps sending sync packets even when armed until the RX stops sending telemetry and the TLM=Off has taken effect
 //     (isTlmDisarmed && handset->IsArmed() && (ExpressLRS_currTlmDenom == 1));
 //
-//   uint8_t NonceFHSSresult = OtaNonce % ExpressLRS_currAirRate_Modparams->FHSShopInterval;
-//
-//   // Sync spam only happens on slot 1 and 2 and can't be disabled
-//   if ((syncSpamCounter || (syncSpamCounterAfterRateChange && FHSSonSyncChannel())) && (NonceFHSSresult == 1 || NonceFHSSresult == 2))
-//   {
-//     otaPkt.std.type = PACKET_TYPE_SYNC;
-//     GenerateSyncPacketData(OtaIsFullRes ? &otaPkt.full.sync.sync : &otaPkt.std.sync);
-//     syncSlot = 0; // reset the sync slot in case the new rate (after the syncspam) has a lower FHSShopInterval
-//   }
-//   // Regular sync rotates through 4x slots, twice on each slot, and telemetry pushes it to the next slot up
-//   // But only on the sync FHSS channel and with a timed delay between them
+  uint8_t NonceFHSSresult = OtaNonce % ExpressLRS_currAirRate_Modparams->FHSShopInterval;
+
+  // Sync spam only happens on slot 1 and 2 and can't be disabled
+  if (/*(syncSpamCounter || (syncSpamCounterAfterRateChange &&*/!InBindingMode && FHSSonSyncChannel()/* && (NonceFHSSresult == 1 || NonceFHSSresult == 2)*/)
+  {
+    otaPkt.std.type = PACKET_TYPE_SYNC;
+    GenerateSyncPacketData(OtaIsFullRes ? &otaPkt.full.sync.sync : &otaPkt.std.sync);
+    // syncSlot = 0; // reset the sync slot in case the new rate (after the syncspam) has a lower FHSShopInterval
+  }
+  // Regular sync rotates through 4x slots, twice on each slot, and telemetry pushes it to the next slot up
+  // But only on the sync FHSS channel and with a timed delay between them
 //   else if ((!skipSync) && ((syncSlot / 2) <= NonceFHSSresult) && (now - SyncPacketLastSent > SyncInterval) && FHSSonSyncChannel())
 //   {
 //     otaPkt.std.type = PACKET_TYPE_SYNC;
 //     GenerateSyncPacketData(OtaIsFullRes ? &otaPkt.full.sync.sync : &otaPkt.std.sync);
 //     syncSlot = (syncSlot + 1) % (ExpressLRS_currAirRate_Modparams->FHSShopInterval * 2);
 //   }
-//   else
+  else
   {
     // if ((NextPacketIsMspData && MspSender.IsActive())/* || dontSendChannelData*/)
     {
@@ -507,7 +542,7 @@ static void ExitBindingMode() // ELRS移植，注释源码另起修改
 
     Serial.println("Exiting binding mode");
 //   DBGLN("Exiting binding mode");
-  waitforTimSyncount = 2;
+  // waitforTimSyncount = 2;
 }
 
 static void setupBindingFromConfig() // ELRS移植，注释源码另起修改
@@ -598,11 +633,11 @@ void handleButtonPress(void)
     }
 }
 
-void TIM2handle() 
-{  
-  if(waitforTimSyncount > 0) 
-    waitforTimSyncount--;
-}
+// void TIM2handle() 
+// {  
+//   // if(waitforTimSyncount > 0) 
+//   //   waitforTimSyncount--;
+// }
 
 void setupBasicHardWare(void)
 {
@@ -627,7 +662,7 @@ void setupBasicHardWare(void)
     pinMode(GPIO_PIN_TX_EN, OUTPUT);
     pinMode(GPIO_PIN_RX_EN, OUTPUT);
     // TIM2
-    ITimer.attachInterruptInterval(TIMER_INTERVAL_MS, TIM2handle);
+    // ITimer.attachInterruptInterval(TIMER_INTERVAL_MS, TIM2handle);
 }
 
 /* setup and loop */
@@ -653,7 +688,7 @@ void setup()
 
     hwTimer::init(nullptr, HWtimerCallbackTock);
     hwTimer::resume();
-    waitforTimSyncount = 2;
+    // waitforTimSyncount = 2;
 }
 
 void loop()

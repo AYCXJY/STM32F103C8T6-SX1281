@@ -121,7 +121,7 @@ bool LockRFmode = false;
 #define SCREEN_HEIGHT  64
 Adafruit_SSD1306 display(OLED_RESET);
 
-#define airRate RATE_LORA_250HZ
+#define airRate RATE_LORA_500HZ
 
 uint16_t receivecount;
 uint16_t receivefreq;
@@ -218,7 +218,7 @@ bool ICACHE_RAM_ATTR HandleFHSS() // ELRS移植，注释源码另起修改
 {
     uint8_t modresultFHSS = (OtaNonce + 1) % ExpressLRS_currAirRate_Modparams->FHSShopInterval;
 
-    if ((ExpressLRS_currAirRate_Modparams->FHSShopInterval == 0) || alreadyFHSS == true || InBindingMode || (modresultFHSS != 0)/* || (connectionState == disconnected)*/)
+    if ((ExpressLRS_currAirRate_Modparams->FHSShopInterval == 0) || alreadyFHSS == true || InBindingMode || (modresultFHSS != 0) || (connectionState == disconnected))
     {
         return false;
     }
@@ -330,12 +330,12 @@ void ICACHE_RAM_ATTR updatePhaseLock() // ELRS移植，注释源码另起修改
                 }
             }
         }
-        // if (tocktime - RxISRtime > 1000)
-        // // if (connectionState != connected)
-        // {
-        //     hwTimer::phaseShift(RawOffset >> 1);
-        // }
-        // else
+        if (slack > 500)
+        // if (connectionState != connected)
+        {
+            hwTimer::phaseShift(RawOffset >> 1);
+        }
+        else
         {
             hwTimer::phaseShift(Offset >> 2);
         }
@@ -390,7 +390,7 @@ void ICACHE_RAM_ATTR HWtimerCallbackTock() // ELRS移植，注释源码另起修
     // User code
     tocktime = micros();
     slack = tocktime - RxISRtime;
-    Serial.println("SLACK " + String(slack));
+    // Serial.println("SLACK " + String(slack));
 
     PFDloop.intEvent(micros()); // our internal osc just fired
 
@@ -438,87 +438,87 @@ void ICACHE_RAM_ATTR HWtimerCallbackTock() // ELRS移植，注释源码另起修
     #endif
 }
 
-void LostConnection(bool resumeRx) // ELRS移植，注释源码另起修改
-{
-    Serial.println("lost conn fc= " + String(FreqCorrection) + " fo= " + String(hwTimer::getFreqOffset()));
-    // DBGLN("lost conn fc=%d fo=%d", FreqCorrection, hwTimer::getFreqOffset());
+// void LostConnection(bool resumeRx) // ELRS移植，注释源码另起修改
+// {
+//     Serial.println("lost conn fc= " + String(FreqCorrection) + " fo= " + String(hwTimer::getFreqOffset()));
+//     // DBGLN("lost conn fc=%d fo=%d", FreqCorrection, hwTimer::getFreqOffset());
 
-    // // Use this rate as the initial rate next time if we connected on it
-    // if (connectionState == connected)
-    //     config.SetRateInitialIdx(ExpressLRS_nextAirRateIndex);
+//     // // Use this rate as the initial rate next time if we connected on it
+//     // if (connectionState == connected)
+//     //     config.SetRateInitialIdx(ExpressLRS_nextAirRateIndex);
 
-    RFmodeCycleMultiplier = 1;
-    connectionState = disconnected; //set lost connection
-    RXtimerState = tim_disconnected;
-    hwTimer::resetFreqOffset();
-    PfdPrevRawOffset = 0;
-    GotConnectionMillis = 0;
-    uplinkLQ = 0;
-    LQCalc.reset();
-    LQCalcDVDA.reset();
-    LPF_Offset.init(0);
-    LPF_OffsetDx.init(0);
-    alreadyTLMresp = false;
-    alreadyFHSS = false;
+//     RFmodeCycleMultiplier = 1;
+//     connectionState = disconnected; //set lost connection
+//     RXtimerState = tim_disconnected;
+//     hwTimer::resetFreqOffset();
+//     PfdPrevRawOffset = 0;
+//     GotConnectionMillis = 0;
+//     uplinkLQ = 0;
+//     LQCalc.reset();
+//     LQCalcDVDA.reset();
+//     LPF_Offset.init(0);
+//     LPF_OffsetDx.init(0);
+//     alreadyTLMresp = false;
+//     alreadyFHSS = false;
 
-    if (!InBindingMode)
-    {
-        if (hwTimer::running)
-        {
-            while(micros() - PFDloop.getIntEventTime() > 250); // time it just after the tock()
-            hwTimer::stop();
-        }
-        SetRFLinkRate(ExpressLRS_nextAirRateIndex, false); // also sets to initialFreq
-        // If not resumRx, Radio will be left in SX127x_OPMODE_STANDBY / SX1280_MODE_STDBY_XOSC
-        if (resumeRx)
-        {
-            Radio.RXnb();
-        }
-    }
-}
+//     if (!InBindingMode)
+//     {
+//         if (hwTimer::running)
+//         {
+//             while(micros() - PFDloop.getIntEventTime() > 250); // time it just after the tock()
+//             hwTimer::stop();
+//         }
+//         SetRFLinkRate(ExpressLRS_nextAirRateIndex, false); // also sets to initialFreq
+//         // If not resumRx, Radio will be left in SX127x_OPMODE_STANDBY / SX1280_MODE_STDBY_XOSC
+//         if (resumeRx)
+//         {
+//             Radio.RXnb();
+//         }
+//     }
+// }
 
-void ICACHE_RAM_ATTR TentativeConnection(unsigned long now) // ELRS移植，注释源码另起修改
-{
-    PFDloop.reset();
-    connectionState = tentative;
-    connectionHasModelMatch = false;
-    RXtimerState = tim_disconnected;
-    Serial.println("tentative conn");
-    // DBGLN("tentative conn");
-    PfdPrevRawOffset = 0;
-    LPF_Offset.init(0);
-    SnrMean.reset();
-    RFmodeLastCycled = now; // give another 3 sec for lock to occur
+// void ICACHE_RAM_ATTR TentativeConnection(unsigned long now) // ELRS移植，注释源码另起修改
+// {
+//     PFDloop.reset();
+//     connectionState = tentative;
+//     connectionHasModelMatch = false;
+//     RXtimerState = tim_disconnected;
+//     Serial.println("tentative conn");
+//     // DBGLN("tentative conn");
+//     PfdPrevRawOffset = 0;
+//     LPF_Offset.init(0);
+//     SnrMean.reset();
+//     RFmodeLastCycled = now; // give another 3 sec for lock to occur
 
-    // The caller MUST call hwTimer::resume(). It is not done here because
-    // the timer ISR will fire immediately and preempt any other code
-}
+//     // The caller MUST call hwTimer::resume(). It is not done here because
+//     // the timer ISR will fire immediately and preempt any other code
+// }
 
-void GotConnection(unsigned long now) // ELRS移植，注释源码另起修改
-{
-    if (connectionState == connected)
-    {
-        return; // Already connected
-    }
+// void GotConnection(unsigned long now) // ELRS移植，注释源码另起修改
+// {
+//     if (connectionState == connected)
+//     {
+//         return; // Already connected
+//     }
 
-    // LockRFmode = firmwareOptions.lock_on_first_connection;
+//     // LockRFmode = firmwareOptions.lock_on_first_connection;
 
-    connectionState = connected; //we got a packet, therefore no lost connection
-    RXtimerState = tim_tentative;
-    GotConnectionMillis = now;
-    // #if defined(PLATFORM_ESP32) || defined(PLATFORM_ESP8266)
-    // webserverPreventAutoStart = true;
-    // #endif
+//     connectionState = connected; //we got a packet, therefore no lost connection
+//     RXtimerState = tim_tentative;
+//     GotConnectionMillis = now;
+//     // #if defined(PLATFORM_ESP32) || defined(PLATFORM_ESP8266)
+//     // webserverPreventAutoStart = true;
+//     // #endif
 
-    // if (firmwareOptions.is_airport)
-    // {
-    //     apInputBuffer.flush();
-    //     apOutputBuffer.flush();
-    // }
+//     // if (firmwareOptions.is_airport)
+//     // {
+//     //     apInputBuffer.flush();
+//     //     apOutputBuffer.flush();
+//     // }
 
-    Serial.println("got conn");
-    // DBGLN("got conn");
-}
+//     Serial.println("got conn");
+//     // DBGLN("got conn");
+// }
 
 void ICACHE_RAM_ATTR OnELRSBindMSP(uint8_t* newUid4) // ELRS移植，注释源码另起修改
 {
@@ -545,7 +545,6 @@ void ICACHE_RAM_ATTR OnELRSBindMSP(uint8_t* newUid4) // ELRS移植，注释源�
 
 static void ICACHE_RAM_ATTR ProcessRfPacket_MSP(OTA_Packet_s const * const otaPktPtr) // ELRS移植，注释源码另起修改
 {
-    receivecount++;
     uint8_t packageIndex;
     uint8_t const * payload;
     uint8_t dataLen;
@@ -568,13 +567,13 @@ static void ICACHE_RAM_ATTR ProcessRfPacket_MSP(OTA_Packet_s const * const otaPk
         packageIndex = otaPktPtr->std.msp_ul.packageIndex;
         payload = otaPktPtr->std.msp_ul.payload;
         dataLen = sizeof(otaPktPtr->std.msp_ul.payload);
-        // // User code--show ota msp data
-        // Serial.print("recieved data: ");
-        // for(int i = 0; i < dataLen; i++)
-        // {
-        //     Serial.print((char)*(payload + i));
-        // }
-        // Serial.println("");
+        // User code--show ota msp data
+        Serial.print("recieved data: ");
+        for(int i = 0; i < dataLen; i++)
+        {
+            Serial.print((char)*(payload + i));
+        }
+        Serial.println("");
 
         // if (config.GetSerialProtocol() == PROTOCOL_MAVLINK)
         // {
@@ -607,6 +606,61 @@ static void ICACHE_RAM_ATTR ProcessRfPacket_MSP(OTA_Packet_s const * const otaPk
     // }
 }
 
+static bool ICACHE_RAM_ATTR ProcessRfPacket_SYNC(uint32_t const now, OTA_Sync_s const * const otaSync)
+{
+    // Verify the first two of three bytes of the binding ID, which should always match
+    if (otaSync->UID3 != UID[3] || otaSync->UID4 != UID[4])
+        return false;
+
+    // // The third byte will be XORed with inverse of the ModelId if ModelMatch is on
+    // // Only require the first 18 bits of the UID to match to establish a connection
+    // // but the last 6 bits must modelmatch before sending any data to the FC
+    // if ((otaSync->UID5 & ~MODELMATCH_MASK) != (UID[5] & ~MODELMATCH_MASK))
+    //     return false;
+
+    LastSyncPacket = now;
+#if defined(DEBUG_RX_SCOREBOARD)
+    DBGW('s');
+#endif
+
+    // // Will change the packet air rate in loop() if this changes
+    // ExpressLRS_nextAirRateIndex = otaSync->rateIndex;
+    // updateSwitchModePendingFromOta(otaSync->switchEncMode);
+
+    // Update TLM ratio, should never be TLM_RATIO_STD/DISARMED, the TX calculates the correct value for the RX
+    // expresslrs_tlm_ratio_e TLMrateIn = (expresslrs_tlm_ratio_e)(otaSync->newTlmRatio + (uint8_t)TLM_RATIO_NO_TLM);
+    // uint8_t TlmDenom = TLMratioEnumToValue(TLMrateIn);
+    // if (ExpressLRS_currTlmDenom != TlmDenom)
+    // {
+    //     DBGLN("New TLMrate 1:%u", TlmDenom);
+    //     ExpressLRS_currTlmDenom = TlmDenom;
+    //     telemBurstValid = false;
+    // }
+
+    // // modelId = 0xff indicates modelMatch is disabled, the XOR does nothing in that case
+    // uint8_t modelXor = (~config.GetModelId()) & MODELMATCH_MASK;
+    // bool modelMatched = otaSync->UID5 == (UID[5] ^ modelXor);
+    // DBGVLN("MM %u=%u %d", otaSync->UID5, UID[5], modelMatched);
+
+    if (connectionState == disconnected
+        || OtaNonce != otaSync->nonce
+        || FHSSgetCurrIndex() != otaSync->fhssIndex
+        // || connectionHasModelMatch != modelMatched
+        )
+    {
+        //DBGLN("\r\n%ux%ux%u", OtaNonce, otaPktPtr->sync.nonce, otaPktPtr->sync.fhssIndex);
+        FHSSsetCurrIndex(otaSync->fhssIndex);
+        OtaNonce = otaSync->nonce;
+        // TentativeConnection(now);
+        connectionState = connected;
+        // // connectionHasModelMatch must come after TentativeConnection, which resets it
+        // connectionHasModelMatch = modelMatched;
+        return true;
+    }
+
+    return false;
+}
+
 bool ICACHE_RAM_ATTR ProcessRFPacket(SX12xxDriverCommon::rx_status const status) // ELRS移植，注释源码另起修改
 {
     if (status != SX12xxDriverCommon::SX12XX_RX_OK)
@@ -631,7 +685,7 @@ bool ICACHE_RAM_ATTR ProcessRFPacket(SX12xxDriverCommon::rx_status const status)
         #endif
         return false;
     }
-
+    receivecount++;
     PFDloop.extEvent(beginProcessing + PACKET_TO_TOCK_SLACK);
 
     doStartTimer = false;
@@ -647,11 +701,11 @@ bool ICACHE_RAM_ATTR ProcessRFPacket(SX12xxDriverCommon::rx_status const status)
     case PACKET_TYPE_MSPDATA:
         ProcessRfPacket_MSP(otaPktPtr);
         break;
-    // case PACKET_TYPE_SYNC: //sync packet from master
-    //     doStartTimer = ProcessRfPacket_SYNC(now,
-    //         OtaIsFullRes ? &otaPktPtr->full.sync.sync : &otaPktPtr->std.sync)
-    //         && !InBindingMode;
-    //     break;
+    case PACKET_TYPE_SYNC: //sync packet from master
+        doStartTimer = ProcessRfPacket_SYNC(now,
+            OtaIsFullRes ? &otaPktPtr->full.sync.sync : &otaPktPtr->std.sync)
+            && !InBindingMode;
+        break;
     // case PACKET_TYPE_TLM:
     //     if (firmwareOptions.is_airport)
     //     {
@@ -1105,7 +1159,13 @@ void setup() // 与ELRS初始化逻辑一致
 void loop() // ELRS移植，注释源码另起修改
 {
     unsigned long now = millis();
-
+    // disconnect
+    if(slack / ExpressLRS_currAirRate_Modparams->interval > 5)
+    {
+        Serial.println("lost connection");
+        connectionState = disconnected;
+        Radio.SetFrequencyReg(FHSSgetInitialFreq());
+    }
     // if (MspReceiver.HasFinishedData())
     // {
     //     MspReceiveComplete();
