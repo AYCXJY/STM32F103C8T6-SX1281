@@ -36,6 +36,7 @@
 /* User include */
 
 #include <Adafruit_SSD1306.h>
+#include "TimerInterrupt_Generic.h"
 
 /* ELRS variable */
 
@@ -95,12 +96,17 @@ uint8_t CRSFinBuffer[CRSF_MAX_PACKET_LEN+1];
 #define SCREEN_HEIGHT 64
 Adafruit_SSD1306 display(OLED_RESET);
 
-#define airRate RATE_LORA_500HZ
+#define airRate RATE_LORA_250HZ
 
 uint16_t sendcount;
 uint16_t sendfreq;
 
 uint8_t CRCvalue;
+
+uint8_t waitforTimSyncount;
+
+#define TIMER_INTERVAL_MS 1000000
+STM32Timer ITimer(TIM2);
 
 /* ELRS Function*/
 
@@ -199,6 +205,7 @@ void ICACHE_RAM_ATTR HandleFHSS() // ELRS移植，注释源码另起修改
     //     }
     // }
     // else
+    if(waitforTimSyncount == 0)
     {
       Radio.SetFrequencyReg(FHSSgetNextFreq());
     }
@@ -500,6 +507,7 @@ static void ExitBindingMode() // ELRS移植，注释源码另起修改
 
     Serial.println("Exiting binding mode");
 //   DBGLN("Exiting binding mode");
+  waitforTimSyncount = 2;
 }
 
 static void setupBindingFromConfig() // ELRS移植，注释源码另起修改
@@ -590,6 +598,12 @@ void handleButtonPress(void)
     }
 }
 
+void TIM2handle() 
+{  
+  if(waitforTimSyncount > 0) 
+    waitforTimSyncount--;
+}
+
 void setupBasicHardWare(void)
 {
     // UART
@@ -612,6 +626,8 @@ void setupBasicHardWare(void)
     // sx1280 GPIO
     pinMode(GPIO_PIN_TX_EN, OUTPUT);
     pinMode(GPIO_PIN_RX_EN, OUTPUT);
+    // TIM2
+    ITimer.attachInterruptInterval(TIMER_INTERVAL_MS, TIM2handle);
 }
 
 /* setup and loop */
@@ -637,6 +653,7 @@ void setup()
 
     hwTimer::init(nullptr, timerCallback);
     hwTimer::resume();
+    waitforTimSyncount = 2;
 }
 
 void loop()
