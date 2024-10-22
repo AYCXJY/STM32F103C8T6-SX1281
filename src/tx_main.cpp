@@ -356,7 +356,7 @@ void ICACHE_RAM_ATTR SendRCdataToRF() // ELRS移植，注释源码另起修改
   }
 }
 
-void ICACHE_RAM_ATTR timerCallback() // ELRS移植，注释源码另起修改
+void ICACHE_RAM_ATTR HWtimerCallbackTock() // ELRS移植，注释源码另起修改
 {
 //   /* If we are busy writing to EEPROM (committing config changes) then we just advance the nonces, i.e. no SPI traffic */
 //   if (commitInProgress)
@@ -651,7 +651,7 @@ void setup()
 
     SetRFLinkRate(enumRatetoIndex(airRate));
 
-    hwTimer::init(nullptr, timerCallback);
+    hwTimer::init(nullptr, HWtimerCallbackTock);
     hwTimer::resume();
     waitforTimSyncount = 2;
 }
