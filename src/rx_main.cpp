@@ -1,8 +1,20 @@
-// 版本：2024/10/21
-// 进度：InvertIQ正常、UID接收正常、EEPROM写入正常、OTA通信正常、OTA-CRC正常、
-// 待办：单次接收与连续接收(单次接收可行)、FHSS跳频与定时器同步(跳频判断正常，定时器校准正常)、连接状态与定时器状态（自写简单重连逻辑，实现同步）、OTA同步包（使用部分同步数据）；
-// 思路：禁止Stubborn，模拟通道包发送，测试FHSS和定时器同步；
-// 问题：
+// 日期：2024年10月22日
+
+// 完成项：
+// 默认绑定与换绑（使用EEPROM存储UID）（使用OTA封装发送绑定包）
+// FHSS跳频通信
+// 可选通信速率（Lora MAX -> 500HZ）
+
+// 优化项：
+// 使用Stubborn实现可靠数据传输
+// 添加遥测数据回传
+// 通道数据填充与解析
+// 使用Radio.Rxnb()单次传输降低功耗
+// 动态功率降低功耗
+// logging库的使用
+// 链路质量
+
+
 
 /* ELRS include */
 
@@ -390,7 +402,7 @@ void ICACHE_RAM_ATTR HWtimerCallbackTock() // ELRS移植，注释源码另起修
     // User code
     tocktime = micros();
     slack = tocktime - RxISRtime;
-    if(slack > 300)
+    // if(slack > 300)
         Serial.println("SLACK " + String(slack));
 
     PFDloop.intEvent(micros()); // our internal osc just fired
