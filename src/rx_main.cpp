@@ -318,7 +318,7 @@ int32_t ICACHE_RAM_ATTR HandleFreqCorr(bool value) // ELRS移植，注释源码�
 
 void ICACHE_RAM_ATTR updatePhaseLock() // ELRS移植，注释源码另起修改
 {
-    if (/*connectionState != disconnected && */PFDloop.hasResult() && PFDloop.calcResult() < 1000)
+    if (/*connectionState != disconnected && */PFDloop.hasResult() && PFDloop.calcResult() < 1500)
     {
         int32_t RawOffset = PFDloop.calcResult();
         int32_t Offset = LPF_Offset.update(RawOffset);
