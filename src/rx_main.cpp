@@ -145,6 +145,12 @@ Adafruit_SSD1306 display(OLED_RESET);
 
 #define airRate RATE_LORA_500HZ
 
+uint16_t fullScount;
+uint16_t fullSfreq;
+uint16_t fullRcount;
+uint16_t fullRfreq;
+uint16_t sendcount;
+uint16_t sendfreq;
 uint16_t receivecount;
 uint16_t receivefreq;
 
@@ -281,6 +287,119 @@ bool ICACHE_RAM_ATTR HandleFHSS() // ELRS移植，注释源码另起修改
 #if defined(Regulatory_Domain_EU_CE_2400)
     SetClearChannelAssessmentTime();
 #endif
+    return true;
+}
+
+bool ICACHE_RAM_ATTR HandleSendTelemetryResponse()
+{
+    uint8_t modresult = (OtaNonce + 1) % ExpressLRS_currTlmDenom;
+
+    if ((connectionState == disconnected) || (ExpressLRS_currTlmDenom == 1) || (alreadyTLMresp == true) || (modresult != 0)/* || !teamraceHasModelMatch*/)
+    {
+        return false; // don't bother sending tlm if disconnected or TLM is off
+    }
+
+    // ESP requires word aligned buffer
+    WORD_ALIGNED_ATTR OTA_Packet_s otaPkt = {0};
+    alreadyTLMresp = true;
+    otaPkt.std.type = PACKET_TYPE_TLM;
+
+    // bool noAirportDataQueued = firmwareOptions.is_airport && apOutputBuffer.size() == 0;
+    // bool noTlmQueued = !TelemetrySender.IsActive() && noAirportDataQueued;
+
+    // if (NextTelemetryType == ELRS_TELEMETRY_TYPE_LINK || noTlmQueued)
+    // {
+    //     OTA_LinkStats_s * ls;
+    //     if (OtaIsFullRes)
+    //     {
+    //         otaPkt.full.tlm_dl.containsLinkStats = 1;
+    //         ls = &otaPkt.full.tlm_dl.ul_link_stats.stats;
+    //         // Include some advanced telemetry in the extra space
+    //         // Note the use of `ul_link_stats.payload` vs just `payload`
+    //         otaPkt.full.tlm_dl.packageIndex = TelemetrySender.GetCurrentPayload(
+    //             otaPkt.full.tlm_dl.ul_link_stats.payload,
+    //             sizeof(otaPkt.full.tlm_dl.ul_link_stats.payload));
+    //     }
+    //     else
+    //     {
+    //         otaPkt.std.tlm_dl.type = ELRS_TELEMETRY_TYPE_LINK;
+    //         ls = &otaPkt.std.tlm_dl.ul_link_stats.stats;
+    //     }
+    //     LinkStatsToOta(ls);
+
+    //     NextTelemetryType = ELRS_TELEMETRY_TYPE_DATA;
+    //     // Start the count at 1 because the next will be DATA and doing +1 before checking
+    //     // against Max below is for some reason 10 bytes more code
+    //     telemetryBurstCount = 1;
+    // }
+    // else
+    {
+        // if (telemetryBurstCount < telemetryBurstMax)
+        // {
+        //     telemetryBurstCount++;
+        // }
+        // else
+        // {
+        //     NextTelemetryType = ELRS_TELEMETRY_TYPE_LINK;
+        // }
+
+        // if (TelemetrySender.IsActive())
+        // {
+        //     if (OtaIsFullRes)
+        //     {
+        //         otaPkt.full.tlm_dl.packageIndex = TelemetrySender.GetCurrentPayload(
+        //             otaPkt.full.tlm_dl.payload,
+        //             sizeof(otaPkt.full.tlm_dl.payload));
+        //     }
+        //     else
+        //     {
+        //         otaPkt.std.tlm_dl.type = ELRS_TELEMETRY_TYPE_DATA;
+        //         otaPkt.std.tlm_dl.packageIndex = TelemetrySender.GetCurrentPayload(
+        //             otaPkt.std.tlm_dl.payload,
+        //             sizeof(otaPkt.std.tlm_dl.payload));
+        //     }
+        // }
+        // else if (firmwareOptions.is_airport)
+        if(apInputBuffer.size())
+        {
+            sendcount++;
+            OtaPackAirportData(&otaPkt, &apInputBuffer);
+        }
+    }
+
+    OtaGeneratePacketCrc(&otaPkt);
+
+    SX12XX_Radio_Number_t transmittingRadio;
+    // if (config.GetForceTlmOff())
+    // {
+    //     transmittingRadio = SX12XX_Radio_NONE;
+    // }
+    // else if (isDualRadio())
+    // {
+    //     transmittingRadio = SX12XX_Radio_All;
+    // }
+    // else
+    {
+        transmittingRadio = Radio.GetLastSuccessfulPacketRadio();
+    }
+
+#if defined(Regulatory_Domain_EU_CE_2400)
+    transmittingRadio &= ChannelIsClear(transmittingRadio);   // weed out the radio(s) if channel in use
+#endif
+
+    // if (!geminiMode && transmittingRadio == SX12XX_Radio_All) // If the receiver is in diversity mode, only send TLM on a single radio.
+    // {
+    //     transmittingRadio = Radio.LastPacketRSSI > Radio.LastPacketRSSI2 ? SX12XX_Radio_1 : SX12XX_Radio_2; // Pick the radio with best rf connection to the tx.
+    // }
+
+    Radio.TXnb((uint8_t*)&otaPkt, ExpressLRS_currAirRate_Modparams->PayloadLength, transmittingRadio);
+    // if (transmittingRadio == SX12XX_Radio_NONE)
+    // {
+    //     // No packet will be sent due to LBT / Telem forced off.
+    //     // Defer TXdoneCallback() to prepare for TLM when the IRQ is normally triggered.
+    //     deferExecutionMicros(ExpressLRS_currAirRate_RFperfParams->TOA, Radio.TXdoneCallback);
+    // }
+
     return true;
 }
 
@@ -451,9 +570,10 @@ void ICACHE_RAM_ATTR HWtimerCallbackTock() // ELRS移植，注释源码另起修
     }
     didFHSS = false;
 
-    Radio.isFirstRxIrq = true;
+    // Radio.isFirstRxIrq = true;
     // updateDiversity();
-    // tlmSent = HandleSendTelemetryResponse();
+
+    tlmSent = HandleSendTelemetryResponse();
 
     #if defined(DEBUG_RX_SCOREBOARD)
     static bool lastPacketWasTelemetry = false;
@@ -653,7 +773,7 @@ static bool ICACHE_RAM_ATTR ProcessRfPacket_SYNC(uint32_t const now, OTA_Sync_s 
     // ExpressLRS_nextAirRateIndex = otaSync->rateIndex;
     // updateSwitchModePendingFromOta(otaSync->switchEncMode);
 
-    // Update TLM ratio, should never be TLM_RATIO_STD/DISARMED, the TX calculates the correct value for the RX
+    // // Update TLM ratio, should never be TLM_RATIO_STD/DISARMED, the TX calculates the correct value for the RX
     // expresslrs_tlm_ratio_e TLMrateIn = (expresslrs_tlm_ratio_e)(otaSync->newTlmRatio + (uint8_t)TLM_RATIO_NO_TLM);
     // uint8_t TlmDenom = TLMratioEnumToValue(TLMrateIn);
     // if (ExpressLRS_currTlmDenom != TlmDenom)
@@ -711,7 +831,6 @@ bool ICACHE_RAM_ATTR ProcessRFPacket(SX12xxDriverCommon::rx_status const status)
         #endif
         return false;
     }
-    receivecount++;
     PFDloop.extEvent(beginProcessing + PACKET_TO_TOCK_SLACK);
 
     doStartTimer = false;
@@ -733,6 +852,7 @@ bool ICACHE_RAM_ATTR ProcessRFPacket(SX12xxDriverCommon::rx_status const status)
             && !InBindingMode;
         break;
     case PACKET_TYPE_TLM:
+            receivecount++;
             OtaUnpackAirportData(otaPktPtr, &apOutputBuffer);
         break;
     default:
@@ -772,6 +892,7 @@ bool ICACHE_RAM_ATTR ProcessRFPacket(SX12xxDriverCommon::rx_status const status)
 bool ICACHE_RAM_ATTR RXdoneISR(SX12xxDriverCommon::rx_status const status) // ELRS移植，注释源码另起修改
 {
     // User code 
+    fullRcount++;
     RxISRtime = micros();
     // Serial.println("RXdoneISR " + String(RxISRtime));
 
@@ -793,6 +914,18 @@ bool ICACHE_RAM_ATTR RXdoneISR(SX12xxDriverCommon::rx_status const status) // EL
         return true;
     }
     return false;
+}
+
+void ICACHE_RAM_ATTR TXdoneISR()
+{
+    fullScount++;
+    Radio.RXnb();
+#if defined(Regulatory_Domain_EU_CE_2400)
+    SetClearChannelAssessmentTime();
+#endif
+#if defined(DEBUG_RX_SCOREBOARD)
+    DBGW('T');
+#endif
 }
 
 static void setupBindingFromConfig() // ELRS移植，注释源码另起修改
@@ -838,7 +971,7 @@ static void setupRadio() // ELRS移植，注释源码另起修改
 #endif
 
     Radio.RXdoneCallback = &RXdoneISR;
-    // Radio.TXdoneCallback = &TXdoneISR;
+    Radio.TXdoneCallback = &TXdoneISR;
 
     SetRFLinkRate(enumRatetoIndex(airRate), false);
     // scanIndex = config.GetRateInitialIdx();
@@ -900,8 +1033,8 @@ static void EnterBindingMode() // ELRS移植，注释源码另起修改
     SetRFLinkRate(enumRatetoIndex(RATE_BINDING), true);
 
     // If the Radio Params (including InvertIQ) parameter changed, need to restart RX to take effect
-    Radio.RXnb(SX1280_MODE_RX_CONT);
-    // Radio.RXnb();
+    // Radio.RXnb(SX1280_MODE_RX_CONT);
+    Radio.RXnb();
 
     Serial.println("Entered binding mode at freq = " + String(Radio.currFreq));
     // DBGLN("Entered binding mode at freq = %d", Radio.currFreq);
@@ -1079,18 +1212,33 @@ void displayDebugInfo()
         display.setCursor(66, 0);            
         display.println(UID[4]);
         display.setCursor(90, 0);            
-        display.println(UID[5]);    
-        // receive rate
-        display.setCursor(0, 24);   
-        display.println("Rate");     
-        display.setCursor(30, 24);         
+        display.println(UID[5]);  
+        // send freq
+        display.setCursor(0, 16);
+        display.println("Send");
+        display.setCursor(30, 16);
+        display.println(sendfreq);
+        // full Send freq
+        display.setCursor(54, 16);
+        display.println("FullS");
+        display.setCursor(92, 16);
+        display.println(fullSfreq); 
+        // receive freq
+        display.setCursor(0, 24);
+        display.println("Recv");
+        display.setCursor(30, 24);
         display.println(receivefreq);  
+        // full Recv freq
+        display.setCursor(54, 24);
+        display.println("FullR");
+        display.setCursor(92, 24);
+        display.println(fullRfreq);  
     }
-    // CRC
-    display.setCursor(0, 16);
-    display.println("CRC");
-    display.setCursor(24, 16);
-    display.println(CRCvalue);
+    // // CRC
+    // display.setCursor(0, 16);
+    // display.println("CRC");
+    // display.setCursor(24, 16);
+    // display.println(CRCvalue);
     // Freq
     display.setCursor(0, 8);           
     display.println("FQ");    
@@ -1101,11 +1249,11 @@ void displayDebugInfo()
     display.println("CH");  
     display.setCursor(94, 8);           
     display.println(FHSSgetCurrIndex());  
-    // RSSI
-    display.setCursor(54, 24);     
-    display.println("RSSI");     
-    display.setCursor(84, 24);           
-    display.println(Radio.GetRssiInst(SX12XX_Radio_1)); 
+    // // RSSI
+    // display.setCursor(54, 24);     
+    // display.println("RSSI");     
+    // display.setCursor(84, 24);           
+    // display.println(Radio.GetRssiInst(SX12XX_Radio_1)); 
     display.display();
 }
 
@@ -1123,8 +1271,14 @@ void handleButtonPress()
 
 void TimerHandler() 
 {  
+    sendfreq = sendcount;
+    sendcount = 0;
     receivefreq = receivecount;
     receivecount = 0;
+    fullSfreq = fullScount;
+    fullScount = 0;
+    fullRfreq = fullRcount;
+    fullRcount = 0;
 }
 
 void setupBasicHardWare()
@@ -1165,6 +1319,7 @@ static void HandleUARTin()
             apInputBuffer.lock();
             apInputBuffer.pushBytes(buf, size);
             apInputBuffer.unlock();
+            digitalToggle(PC13);
         }
     }
 }
@@ -1201,7 +1356,7 @@ void setup() // 与ELRS初始化逻辑一致
     if (connectionState != radioFailed)
     {
         // MspReceiver.SetDataToReceive(MspData, ELRS_MSP_BUFFER);
-        Radio.RXnb(SX1280_MODE_RX_CONT);
+        Radio.RXnb();
         hwTimer::init(HWtimerCallbackTick, HWtimerCallbackTock);
     }
     hwTimer::resume();
@@ -1209,6 +1364,7 @@ void setup() // 与ELRS初始化逻辑一致
     // setup() eats up some of this time, which can cause the first mode connection to fail.
     // Resetting the time here give the first mode a better chance of connection.
     RFmodeLastCycled = millis();
+    ExpressLRS_currTlmDenom = 2;
 }
 
 void loop() // ELRS移植，注释源码另起修改
@@ -1230,7 +1386,7 @@ void loop() // ELRS移植，注释源码另起修改
 
     // read and process any data from serial ports, send any queued non-RC data
     // handleSerialIO();
-    // HandleUARTin();
+    HandleUARTin();
     HandleUARTout();
 
     // CheckConfigChangePending();

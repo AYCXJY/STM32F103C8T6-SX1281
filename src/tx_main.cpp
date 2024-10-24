@@ -116,8 +116,14 @@ Adafruit_SSD1306 display(OLED_RESET);
 
 #define airRate RATE_LORA_500HZ
 
+uint16_t fullScount;
+uint16_t fullSfreq;
+uint16_t fullRcount;
+uint16_t fullRfreq;
 uint16_t sendcount;
 uint16_t sendfreq;
+uint16_t receivecount;
+uint16_t receivefreq;
 
 uint8_t CRCvalue;
 
@@ -127,6 +133,88 @@ uint8_t waitforTimSyncount;
 STM32Timer ITimer(TIM2);
 
 /* ELRS Function*/
+
+bool ICACHE_RAM_ATTR ProcessTLMpacket(SX12xxDriverCommon::rx_status const status)
+{
+  if (status != SX12xxDriverCommon::SX12XX_RX_OK)
+  {
+    Serial.println("TLM HW CRC error");
+    // DBGLN("TLM HW CRC error");
+    return false;
+  }
+
+  OTA_Packet_s * const otaPktPtr = (OTA_Packet_s * const)Radio.RXdataBuffer;
+  if (!OtaValidatePacketCrc(otaPktPtr))
+  {
+    Serial.println("TLM crc error");
+    return false;
+  }
+
+  if (otaPktPtr->std.type != PACKET_TYPE_TLM)
+  {
+    Serial.println("TLM type error " + String(otaPktPtr->std.type));
+    return false;
+  }
+
+  LastTLMpacketRecvMillis = millis();
+  // LQCalc.add();
+
+  // Radio.GetLastPacketStats();
+  // CRSF::LinkStatistics.downlink_SNR = SNR_DESCALE(Radio.LastPacketSNRRaw);
+  // CRSF::LinkStatistics.downlink_RSSI_1 = Radio.LastPacketRSSI;
+  // CRSF::LinkStatistics.downlink_RSSI_2 = Radio.LastPacketRSSI2;
+
+  // Full res mode
+  if (OtaIsFullRes)
+  {
+    OTA_Packet8_s * const ota8 = (OTA_Packet8_s * const)otaPktPtr;
+    uint8_t *telemPtr;
+    uint8_t dataLen;
+    // if (ota8->tlm_dl.containsLinkStats)
+    // {
+    //   LinkStatsFromOta(&ota8->tlm_dl.ul_link_stats.stats);
+    //   telemPtr = ota8->tlm_dl.ul_link_stats.payload;
+    //   dataLen = sizeof(ota8->tlm_dl.ul_link_stats.payload);
+    // }
+    // else
+    {
+      // if (firmwareOptions.is_airport)
+      {
+        OtaUnpackAirportData(otaPktPtr, &apOutputBuffer);
+        receivecount++;
+        return true;
+      }
+      // telemPtr = ota8->tlm_dl.payload;
+      // dataLen = sizeof(ota8->tlm_dl.payload);
+    }
+    // //DBGLN("pi=%u len=%u", ota8->tlm_dl.packageIndex, dataLen);
+    // TelemetryReceiver.ReceiveData(ota8->tlm_dl.packageIndex & ELRS8_TELEMETRY_MAX_PACKAGES, telemPtr, dataLen);
+  }
+  // Std res mode
+  else
+  {
+    switch (otaPktPtr->std.tlm_dl.type)
+    {
+      // case ELRS_TELEMETRY_TYPE_LINK:
+      //   LinkStatsFromOta(&otaPktPtr->std.tlm_dl.ul_link_stats.stats);
+      //   break;
+
+      case ELRS_TELEMETRY_TYPE_DATA:
+        // if (firmwareOptions.is_airport)
+        {
+          OtaUnpackAirportData(otaPktPtr, &apOutputBuffer);
+          receivecount++;
+          return true;
+        }
+        // TelemetryReceiver.ReceiveData(otaPktPtr->std.tlm_dl.packageIndex & ELRS4_TELEMETRY_MAX_PACKAGES,
+        //   otaPktPtr->std.tlm_dl.payload,
+        //   sizeof(otaPktPtr->std.tlm_dl.payload));
+        break;
+    }
+  }
+
+  return true;
+}
 
 void ICACHE_RAM_ATTR GenerateSyncPacketData(OTA_Sync_s * const syncPtr) // ELRS移植，注释源码另起修改
 {
@@ -265,6 +353,16 @@ void ICACHE_RAM_ATTR HandleFHSS() // ELRS移植，注释源码另起修改
   }
 }
 
+void ICACHE_RAM_ATTR HandlePrepareForTLM()
+{
+  // If TLM enabled and next packet is going to be telemetry, start listening to have a large receive window (time-wise)
+  if (ExpressLRS_currTlmDenom != 1 && ((OtaNonce + 1) % ExpressLRS_currTlmDenom) == 0)
+  {
+    Radio.RXnb();
+    TelemetryRcvPhase = ttrpPreReceiveGap;
+  }
+}
+
 void ICACHE_RAM_ATTR SendRCdataToRF() // ELRS移植，注释源码另起修改
 {
   // // Do not send a stale channels packet to the RX if one has not been received from the handset
@@ -304,6 +402,7 @@ void ICACHE_RAM_ATTR SendRCdataToRF() // ELRS移植，注释源码另起修改
   if(apInputBuffer.size())
   {
     OtaPackAirportData(&otaPkt, &apInputBuffer);
+    sendcount++;
   }
   // Sync spam only happens on slot 1 and 2 and can't be disabled
   else if (/*(syncSpamCounter || (syncSpamCounterAfterRateChange &&*/!InBindingMode && FHSSonSyncChannel()/* && (NonceFHSSresult == 1 || NonceFHSSresult == 2)*/)
@@ -415,6 +514,20 @@ void ICACHE_RAM_ATTR SendRCdataToRF() // ELRS移植，注释源码另起修改
 
 void ICACHE_RAM_ATTR HWtimerCallbackTock() // ELRS移植，注释源码另起修改
 {
+  static uint16_t tockcount = 0;
+  tockcount++;
+  if (tockcount >= (1000000 / ExpressLRS_currAirRate_Modparams->interval))
+  {
+    tockcount = 0;
+    sendfreq = sendcount;
+    sendcount = 0;
+    receivefreq = receivecount;
+    receivecount = 0;
+    fullSfreq = fullScount;
+    fullScount = 0;
+    fullRfreq = fullRcount;
+    fullRcount = 0;
+  }
 //   /* If we are busy writing to EEPROM (committing config changes) then we just advance the nonces, i.e. no SPI traffic */
 //   if (commitInProgress)
 //   {
@@ -446,38 +559,47 @@ void ICACHE_RAM_ATTR HWtimerCallbackTock() // ELRS移植，注释源码另起修
   if (!InBindingMode)
     OtaNonce++;
 
-//   // If HandleTLM has started Receive mode, TLM packet reception should begin shortly
-//   // Skip transmitting on this slot
-//   if (TelemetryRcvPhase == ttrpPreReceiveGap)
-//   {
-//     TelemetryRcvPhase = ttrpExpectingTelem;
-// #if defined(Regulatory_Domain_EU_CE_2400)
-//     // Use downlink LQ for LBT success ratio instead for EU/CE reg domain
-//     CRSF::LinkStatistics.downlink_Link_quality = LBTSuccessCalc.getLQ();
-// #else
-//     CRSF::LinkStatistics.downlink_Link_quality = LQCalc.getLQ();
-// #endif
-//     LQCalc.inc();
-//     return;
-//   }
-//   else if (TelemetryRcvPhase == ttrpExpectingTelem && !LQCalc.currentIsSet())
-//   {
-//     // Indicate no telemetry packet received to the DP system
-//     DynamicPower_TelemetryUpdate(DYNPOWER_UPDATE_MISSED);
-//   }
+  // If HandleTLM has started Receive mode, TLM packet reception should begin shortly
+  // Skip transmitting on this slot
+  if (TelemetryRcvPhase == ttrpPreReceiveGap)
+  {
+    TelemetryRcvPhase = ttrpExpectingTelem;
+#if defined(Regulatory_Domain_EU_CE_2400)
+    // Use downlink LQ for LBT success ratio instead for EU/CE reg domain
+    CRSF::LinkStatistics.downlink_Link_quality = LBTSuccessCalc.getLQ();
+#else
+    // CRSF::LinkStatistics.downlink_Link_quality = LQCalc.getLQ();
+#endif
+    // LQCalc.inc();
+    return;
+  }
+  // else if (TelemetryRcvPhase == ttrpExpectingTelem && !LQCalc.currentIsSet())
+  // {
+  //   // // Indicate no telemetry packet received to the DP system
+  //   // DynamicPower_TelemetryUpdate(DYNPOWER_UPDATE_MISSED);
+  // }
 
-//   TelemetryRcvPhase = ttrpTransmitting;
+  TelemetryRcvPhase = ttrpTransmitting;
 
-    SendRCdataToRF();
+  SendRCdataToRF();
+}
 
-    static uint16_t tockcount = 0;
-    tockcount++;
-    if (tockcount >= (1000000 / ExpressLRS_currAirRate_Modparams->interval))
-    {
-        tockcount = 0;
-        sendfreq = sendcount;
-        sendcount = 0;
-    }
+bool ICACHE_RAM_ATTR RXdoneISR(SX12xxDriverCommon::rx_status const status)
+{
+  fullRcount++;
+  // if (LQCalc.currentIsSet())
+  // {
+  //   return false; // Already received tlm, do not run ProcessTLMpacket() again.
+  // }
+  bool packetSuccessful = ProcessTLMpacket(status);
+#if defined(Regulatory_Domain_EU_CE_2400)
+  if (packetSuccessful)
+  {
+    SetClearChannelAssessmentTime();
+  }
+#endif
+  // busyTransmitting = false;
+  return packetSuccessful;
 }
 
 void ICACHE_RAM_ATTR TXdoneISR() // ELRS移植，注释源码另起修改
@@ -486,11 +608,11 @@ void ICACHE_RAM_ATTR TXdoneISR() // ELRS移植，注释源码另起修改
 //   {
 //     return; // Already finished transmission and do not call HandleFHSS() a second time, which may hop the frequency!
 //   }
-
+  fullScount++;
   if (connectionState != awaitingModelId)
   {
     HandleFHSS();
-    // HandlePrepareForTLM();
+    HandlePrepareForTLM();
 #if defined(Regulatory_Domain_EU_CE_2400)
     if (TelemetryRcvPhase != ttrpPreReceiveGap)
     {
@@ -503,7 +625,6 @@ void ICACHE_RAM_ATTR TXdoneISR() // ELRS移植，注释源码另起修改
 #endif // non-CE
   }
 //   busyTransmitting = false;
-  sendcount++;
 }
 
 void SendUIDOverMSP() // ELRS移植，注释源码另起修改
@@ -619,17 +740,27 @@ void displayDebugInfo()
         display.println(UID[4]);
         display.setCursor(90, 0);
         display.println(UID[5]);
-        // Rate
-        display.setCursor(0, 24);
-        display.println("Rate");
-        display.setCursor(30, 24);
+        // send freq
+        display.setCursor(0, 16);
+        display.println("Send");
+        display.setCursor(30, 16);
         display.println(sendfreq);
+        // full Send freq
+        display.setCursor(54, 16);
+        display.println("FullS");
+        display.setCursor(92, 16);
+        display.println(fullSfreq); 
+        // receive freq
+        display.setCursor(0, 24);
+        display.println("Recv");
+        display.setCursor(30, 24);
+        display.println(receivefreq);  
+        // full Recv freq
+        display.setCursor(54, 24);
+        display.println("FullR");
+        display.setCursor(92, 24);
+        display.println(fullRfreq);
     }
-    // CRC
-    display.setCursor(0, 16);
-    display.println("CRC");
-    display.setCursor(24, 16);
-    display.println(CRCvalue);
     // Freq
     display.setCursor(0, 8);
     display.println("FQ");
@@ -691,6 +822,7 @@ static void HandleUARTin()
             apInputBuffer.lock();
             apInputBuffer.pushBytes(buf, size);
             apInputBuffer.unlock();
+            digitalToggle(PC13);
         }
     }
 }
@@ -722,7 +854,7 @@ void setup()
     FHSSrandomiseFHSSsequence(uidMacSeedGet());
 
     Radio.TXdoneCallback = &TXdoneISR;
-    // Radio.RXdoneCallback = &RXdoneISR;
+    Radio.RXdoneCallback = &RXdoneISR;
 
     Radio.currFreq = FHSSgetInitialFreq();
 
@@ -734,12 +866,13 @@ void setup()
 
     hwTimer::init(nullptr, HWtimerCallbackTock);
     hwTimer::resume();
+    ExpressLRS_currTlmDenom = 2;
 }
 
 void loop()
 {
     HandleUARTin();
-    // HandleUARTout();
+    HandleUARTout();
     // uint32_t now = millis();
     // only send msp data when binding is not active
     // static bool mspTransferActive = false;
