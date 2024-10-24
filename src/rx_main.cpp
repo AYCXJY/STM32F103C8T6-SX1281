@@ -1,4 +1,4 @@
-// 日期：2024年10月23日
+// 日期：2024年10月24日
 
 // 完成项：
 // 默认绑定与换绑（使用EEPROM存储UID）（使用OTA封装发送绑定包）
@@ -11,7 +11,7 @@
 // 需求项：发射机和接收机都需要启用半双工模式，依据TLM回传逻辑收发包，使用PC串口接收和发送数据。
 // 需求细分：第一步：实现从PC串口助手读取数据后回传；(完成)
 //          第二步：实现单向透传；(完成)
-//          第三步：启用TLM，实现双向透传；
+//          第三步：启用TLM，实现双向透传；（完成）
 
 // 可选功能项：
 // 使用Stubborn实现可靠数据传输
@@ -20,7 +20,7 @@
 // 链路质量
 
 // 优化项：
-// 使用Radio.Rxnb()单次传输降低功耗
+// 使用Radio.Rxnb()单次传输降低功耗（完成）
 // 动态功率降低功耗
 // logging调试库的使用
 
@@ -529,9 +529,44 @@ void ICACHE_RAM_ATTR HWtimerCallbackTick() // ELRS移植，注释源码另起修
     alreadyFHSS = false;
 }
 
+static void HandleUARTin()
+{
+    if(Serial.available())
+    {
+        auto size = std::min(apInputBuffer.free(), (uint16_t)Serial.available());
+        if (size > 0)
+        {
+            uint8_t buf[size];
+            Serial.readBytes(buf, size);
+            apInputBuffer.lock();
+            apInputBuffer.pushBytes(buf, size);
+            apInputBuffer.unlock();
+            digitalToggle(PC13);
+        }
+    }
+}
+
+static void HandleUARTout()
+{
+    if(Serial.availableForWrite())
+    {
+        auto size = apOutputBuffer.size();
+        if (size)
+        {
+            uint8_t buf[size];
+            apOutputBuffer.lock();
+            apOutputBuffer.popBytes(buf, size);
+            apOutputBuffer.unlock();
+            Serial.write(buf, size);
+        }
+    }
+}
+
 void ICACHE_RAM_ATTR HWtimerCallbackTock() // ELRS移植，注释源码另起修改
 {
     // User code
+    HandleUARTin();
+    HandleUARTout();
     tocktime = micros();
     slack = tocktime - RxISRtime;
     // if(slack > 300)
@@ -1307,38 +1342,6 @@ void setupBasicHardWare()
     ITimer.attachInterruptInterval(TIMER_INTERVAL_MS, TimerHandler);
 }
 
-static void HandleUARTin()
-{
-    if(Serial.available())
-    {
-        auto size = std::min(apInputBuffer.free(), (uint16_t)Serial.available());
-        if (size > 0)
-        {
-            uint8_t buf[size];
-            Serial.readBytes(buf, size);
-            apInputBuffer.lock();
-            apInputBuffer.pushBytes(buf, size);
-            apInputBuffer.unlock();
-            digitalToggle(PC13);
-        }
-    }
-}
-
-static void HandleUARTout()
-{
-    if(Serial.availableForWrite())
-    {
-        auto size = apOutputBuffer.size();
-        if (size)
-        {
-            uint8_t buf[size];
-            apOutputBuffer.lock();
-            apOutputBuffer.popBytes(buf, size);
-            apOutputBuffer.unlock();
-            Serial.write(buf, size);
-        }
-    }
-}
 
 /* setup and loop */
 
@@ -1386,8 +1389,6 @@ void loop() // ELRS移植，注释源码另起修改
 
     // read and process any data from serial ports, send any queued non-RC data
     // handleSerialIO();
-    HandleUARTin();
-    HandleUARTout();
 
     // CheckConfigChangePending();
     // executeDeferredFunction(micros());

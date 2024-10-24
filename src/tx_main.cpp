@@ -1,4 +1,4 @@
-// 日期：2024年10月23日
+// 日期：2024年10月24日
 
 // 完成项：
 // 默认绑定与换绑（使用EEPROM存储UID）（使用OTA封装发送绑定包）
@@ -9,6 +9,9 @@
 // 下阶段：实现一个无线双向透传，不需要确认和重传。
 
 // 需求项：发射机和接收机都需要启用半双工模式，依据TLM回传逻辑收发包，使用PC串口接收和发送数据。
+// 需求细分：第一步：实现从PC串口助手读取数据后回传；(完成)
+//          第二步：实现单向透传；(完成)
+//          第三步：启用TLM，实现双向透传；（完成）
 
 // 可选功能项：
 // 使用Stubborn实现可靠数据传输
@@ -17,11 +20,9 @@
 // 链路质量
 
 // 优化项：
-// 使用Radio.Rxnb()单次传输降低功耗
+// 使用Radio.Rxnb()单次传输降低功耗（完成）
 // 动态功率降低功耗
 // logging调试库的使用
-
-
 /* ELRS include */
 
 #include "rxtx_common.h"
@@ -399,13 +400,8 @@ void ICACHE_RAM_ATTR SendRCdataToRF() // ELRS移植，注释源码另起修改
 //
   uint8_t NonceFHSSresult = OtaNonce % ExpressLRS_currAirRate_Modparams->FHSShopInterval;
 
-  if(apInputBuffer.size())
-  {
-    OtaPackAirportData(&otaPkt, &apInputBuffer);
-    sendcount++;
-  }
   // Sync spam only happens on slot 1 and 2 and can't be disabled
-  else if (/*(syncSpamCounter || (syncSpamCounterAfterRateChange &&*/!InBindingMode && FHSSonSyncChannel()/* && (NonceFHSSresult == 1 || NonceFHSSresult == 2)*/)
+  if (/*(syncSpamCounter || (syncSpamCounterAfterRateChange &&*/!InBindingMode && FHSSonSyncChannel()/* && (NonceFHSSresult == 1 || NonceFHSSresult == 2)*/)
   {
     otaPkt.std.type = PACKET_TYPE_SYNC;
     GenerateSyncPacketData(OtaIsFullRes ? &otaPkt.full.sync.sync : &otaPkt.std.sync);
@@ -419,6 +415,11 @@ void ICACHE_RAM_ATTR SendRCdataToRF() // ELRS移植，注释源码另起修改
 //     GenerateSyncPacketData(OtaIsFullRes ? &otaPkt.full.sync.sync : &otaPkt.std.sync);
 //     syncSlot = (syncSlot + 1) % (ExpressLRS_currAirRate_Modparams->FHSShopInterval * 2);
 //   }
+  else if(apInputBuffer.size())
+  {
+    OtaPackAirportData(&otaPkt, &apInputBuffer);
+    sendcount++;
+  }
   else
   {
     // if ((NextPacketIsMspData && MspSender.IsActive())/* || dontSendChannelData*/)
@@ -512,8 +513,43 @@ void ICACHE_RAM_ATTR SendRCdataToRF() // ELRS移植，注释源码另起修改
   }
 }
 
+static void HandleUARTin()
+{
+    if(Serial.available())
+    {
+        auto size = std::min(apInputBuffer.free(), (uint16_t)Serial.available());
+        if (size > 0)
+        {
+            uint8_t buf[size];
+            Serial.readBytes(buf, size);
+            apInputBuffer.lock();
+            apInputBuffer.pushBytes(buf, size);
+            apInputBuffer.unlock();
+            digitalToggle(PC13);
+        }
+    }
+}
+
+static void HandleUARTout()
+{
+    if(Serial.availableForWrite())
+    {
+        auto size = apOutputBuffer.size();
+        if (size)
+        {
+            uint8_t buf[size];
+            apOutputBuffer.lock();
+            apOutputBuffer.popBytes(buf, size);
+            apOutputBuffer.unlock();
+            Serial.write(buf, size);
+        }
+    }
+}
+
 void ICACHE_RAM_ATTR HWtimerCallbackTock() // ELRS移植，注释源码另起修改
 {
+  HandleUARTin();
+  HandleUARTout();
   static uint16_t tockcount = 0;
   tockcount++;
   if (tockcount >= (1000000 / ExpressLRS_currAirRate_Modparams->interval))
@@ -810,38 +846,6 @@ void setupBasicHardWare(void)
     pinMode(GPIO_PIN_RX_EN, OUTPUT);
 }
 
-static void HandleUARTin()
-{
-    if(Serial.available())
-    {
-        auto size = std::min(apInputBuffer.free(), (uint16_t)Serial.available());
-        if (size > 0)
-        {
-            uint8_t buf[size];
-            Serial.readBytes(buf, size);
-            apInputBuffer.lock();
-            apInputBuffer.pushBytes(buf, size);
-            apInputBuffer.unlock();
-            digitalToggle(PC13);
-        }
-    }
-}
-
-static void HandleUARTout()
-{
-    if(Serial.availableForWrite())
-    {
-        auto size = apOutputBuffer.size();
-        if (size)
-        {
-            uint8_t buf[size];
-            apOutputBuffer.lock();
-            apOutputBuffer.popBytes(buf, size);
-            apOutputBuffer.unlock();
-            Serial.write(buf, size);
-        }
-    }
-}
 
 /* setup and loop */
 
@@ -871,8 +875,6 @@ void setup()
 
 void loop()
 {
-    HandleUARTin();
-    HandleUARTout();
     // uint32_t now = millis();
     // only send msp data when binding is not active
     // static bool mspTransferActive = false;
@@ -907,7 +909,6 @@ void loop()
     //             }
     //         }
     //     }
-    
     
     displayDebugInfo();
 }
