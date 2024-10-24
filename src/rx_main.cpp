@@ -9,6 +9,9 @@
 // 下阶段：实现一个无线双向透传，不需要确认和重传。
 
 // 需求项：发射机和接收机都需要启用半双工模式，依据TLM回传逻辑收发包，使用PC串口接收和发送数据。
+// 需求细分：第一步：实现从PC串口助手读取数据后回传；(完成)
+//          第二步：实现单向透传；
+//          第三步：启用TLM，实现双向透传；
 
 // 可选功能项：
 // 使用Stubborn实现可靠数据传输
@@ -71,7 +74,7 @@
 
 #include <Adafruit_SSD1306.h>
 #include "TimerInterrupt_Generic.h"
-
+#include <algorithm> 
 /* ELRS variable */
 
 StubbornSender TelemetrySender;
@@ -156,6 +159,9 @@ uint32_t ticktime;
 uint32_t tocktime;
 uint32_t RxISRtime;
 uint32_t slack;
+
+FIFO<AP_MAX_BUF_LEN> apInputBuffer;
+FIFO<AP_MAX_BUF_LEN> apOutputBuffer;
 
 /* ELRS Function*/
 
@@ -410,7 +416,7 @@ void ICACHE_RAM_ATTR HWtimerCallbackTock() // ELRS移植，注释源码另起修
     tocktime = micros();
     slack = tocktime - RxISRtime;
     // if(slack > 300)
-        Serial.println("SLACK " + String(slack));
+        // Serial.println("SLACK " + String(slack));
 
     PFDloop.intEvent(micros()); // our internal osc just fired
 
@@ -462,11 +468,11 @@ void ICACHE_RAM_ATTR HWtimerCallbackTock() // ELRS移植，注释源码另起修
 // {
 //     Serial.println("lost conn fc= " + String(FreqCorrection) + " fo= " + String(hwTimer::getFreqOffset()));
 //     // DBGLN("lost conn fc=%d fo=%d", FreqCorrection, hwTimer::getFreqOffset());
-
+//
 //     // // Use this rate as the initial rate next time if we connected on it
 //     // if (connectionState == connected)
 //     //     config.SetRateInitialIdx(ExpressLRS_nextAirRateIndex);
-
+//
 //     RFmodeCycleMultiplier = 1;
 //     connectionState = disconnected; //set lost connection
 //     RXtimerState = tim_disconnected;
@@ -480,7 +486,7 @@ void ICACHE_RAM_ATTR HWtimerCallbackTock() // ELRS移植，注释源码另起修
 //     LPF_OffsetDx.init(0);
 //     alreadyTLMresp = false;
 //     alreadyFHSS = false;
-
+//
 //     if (!InBindingMode)
 //     {
 //         if (hwTimer::running)
@@ -496,7 +502,7 @@ void ICACHE_RAM_ATTR HWtimerCallbackTock() // ELRS移植，注释源码另起修
 //         }
 //     }
 // }
-
+//
 // void ICACHE_RAM_ATTR TentativeConnection(unsigned long now) // ELRS移植，注释源码另起修改
 // {
 //     PFDloop.reset();
@@ -509,33 +515,33 @@ void ICACHE_RAM_ATTR HWtimerCallbackTock() // ELRS移植，注释源码另起修
 //     LPF_Offset.init(0);
 //     SnrMean.reset();
 //     RFmodeLastCycled = now; // give another 3 sec for lock to occur
-
+//
 //     // The caller MUST call hwTimer::resume(). It is not done here because
 //     // the timer ISR will fire immediately and preempt any other code
 // }
-
+//
 // void GotConnection(unsigned long now) // ELRS移植，注释源码另起修改
 // {
 //     if (connectionState == connected)
 //     {
 //         return; // Already connected
 //     }
-
+//
 //     // LockRFmode = firmwareOptions.lock_on_first_connection;
-
+//
 //     connectionState = connected; //we got a packet, therefore no lost connection
 //     RXtimerState = tim_tentative;
 //     GotConnectionMillis = now;
 //     // #if defined(PLATFORM_ESP32) || defined(PLATFORM_ESP8266)
 //     // webserverPreventAutoStart = true;
 //     // #endif
-
+//
 //     // if (firmwareOptions.is_airport)
 //     // {
 //     //     apInputBuffer.flush();
 //     //     apOutputBuffer.flush();
 //     // }
-
+//
 //     Serial.println("got conn");
 //     // DBGLN("got conn");
 // }
@@ -1124,7 +1130,7 @@ void TimerHandler()
     receivecount = 0;
 }
 
-void setupBasicHardWare(void)
+void setupBasicHardWare()
 {
     // UART
     Serial.begin(420000);
@@ -1148,6 +1154,38 @@ void setupBasicHardWare(void)
     pinMode(GPIO_PIN_RX_EN, OUTPUT);
     // TIM2
     ITimer.attachInterruptInterval(TIMER_INTERVAL_MS, TimerHandler);
+}
+
+static void HandleUARTin()
+{
+    if(Serial.available())
+    {
+        auto size = std::min(apInputBuffer.free(), (uint16_t)Serial.available());
+        if (size > 0)
+        {
+            uint8_t buf[size];
+            Serial.readBytes(buf, size);
+            apInputBuffer.lock();
+            apInputBuffer.pushBytes(buf, size);
+            apInputBuffer.unlock();
+        }
+    }
+}
+
+static void HandleUARTout()
+{
+    if(Serial.availableForWrite())
+    {
+        auto size = apOutputBuffer.size();
+        if (size)
+        {
+            uint8_t buf[size];
+            apOutputBuffer.lock();
+            apOutputBuffer.popBytes(buf, size);
+            apOutputBuffer.unlock();
+            Serial.write(buf, size);
+        }
+    }
 }
 
 /* setup and loop */
@@ -1182,7 +1220,7 @@ void loop() // ELRS移植，注释源码另起修改
     // disconnect
     if(slack / ExpressLRS_currAirRate_Modparams->interval > 5)
     {
-        Serial.println("lost connection");
+        // Serial.println("lost connection");
         connectionState = disconnected;
         Radio.SetFrequencyReg(FHSSgetInitialFreq());
     }
@@ -1195,6 +1233,8 @@ void loop() // ELRS移植，注释源码另起修改
 
     // read and process any data from serial ports, send any queued non-RC data
     // handleSerialIO();
+    HandleUARTin();
+    HandleUARTout();
 
     // CheckConfigChangePending();
     // executeDeferredFunction(micros());
