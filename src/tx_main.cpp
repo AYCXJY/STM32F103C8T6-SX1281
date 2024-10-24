@@ -301,8 +301,12 @@ void ICACHE_RAM_ATTR SendRCdataToRF() // ELRS移植，注释源码另起修改
 //
   uint8_t NonceFHSSresult = OtaNonce % ExpressLRS_currAirRate_Modparams->FHSShopInterval;
 
+  if(apInputBuffer.size())
+  {
+    OtaPackAirportData(&otaPkt, &apInputBuffer);
+  }
   // Sync spam only happens on slot 1 and 2 and can't be disabled
-  if (/*(syncSpamCounter || (syncSpamCounterAfterRateChange &&*/!InBindingMode && FHSSonSyncChannel()/* && (NonceFHSSresult == 1 || NonceFHSSresult == 2)*/)
+  else if (/*(syncSpamCounter || (syncSpamCounterAfterRateChange &&*/!InBindingMode && FHSSonSyncChannel()/* && (NonceFHSSresult == 1 || NonceFHSSresult == 2)*/)
   {
     otaPkt.std.type = PACKET_TYPE_SYNC;
     GenerateSyncPacketData(OtaIsFullRes ? &otaPkt.full.sync.sync : &otaPkt.std.sync);
@@ -651,16 +655,10 @@ void handleButtonPress(void)
     }
 }
 
-// void TIM2handle() 
-// {  
-//   // if(waitforTimSyncount > 0) 
-//   //   waitforTimSyncount--;
-// }
-
 void setupBasicHardWare(void)
 {
     // UART
-    Serial.begin(420000);
+    Serial.begin(9600);
     // LED
     pinMode(PC13, OUTPUT);
     digitalWrite(PC13, HIGH);
@@ -679,8 +677,38 @@ void setupBasicHardWare(void)
     // sx1280 GPIO
     pinMode(GPIO_PIN_TX_EN, OUTPUT);
     pinMode(GPIO_PIN_RX_EN, OUTPUT);
-    // TIM2
-    // ITimer.attachInterruptInterval(TIMER_INTERVAL_MS, TIM2handle);
+}
+
+static void HandleUARTin()
+{
+    if(Serial.available())
+    {
+        auto size = std::min(apInputBuffer.free(), (uint16_t)Serial.available());
+        if (size > 0)
+        {
+            uint8_t buf[size];
+            Serial.readBytes(buf, size);
+            apInputBuffer.lock();
+            apInputBuffer.pushBytes(buf, size);
+            apInputBuffer.unlock();
+        }
+    }
+}
+
+static void HandleUARTout()
+{
+    if(Serial.availableForWrite())
+    {
+        auto size = apOutputBuffer.size();
+        if (size)
+        {
+            uint8_t buf[size];
+            apOutputBuffer.lock();
+            apOutputBuffer.popBytes(buf, size);
+            apOutputBuffer.unlock();
+            Serial.write(buf, size);
+        }
+    }
 }
 
 /* setup and loop */
@@ -706,11 +734,12 @@ void setup()
 
     hwTimer::init(nullptr, HWtimerCallbackTock);
     hwTimer::resume();
-    // waitforTimSyncount = 2;
 }
 
 void loop()
 {
+    HandleUARTin();
+    // HandleUARTout();
     // uint32_t now = millis();
     // only send msp data when binding is not active
     // static bool mspTransferActive = false;

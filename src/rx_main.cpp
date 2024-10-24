@@ -10,7 +10,7 @@
 
 // 需求项：发射机和接收机都需要启用半双工模式，依据TLM回传逻辑收发包，使用PC串口接收和发送数据。
 // 需求细分：第一步：实现从PC串口助手读取数据后回传；(完成)
-//          第二步：实现单向透传；
+//          第二步：实现单向透传；(完成)
 //          第三步：启用TLM，实现双向透传；
 
 // 可选功能项：
@@ -732,12 +732,9 @@ bool ICACHE_RAM_ATTR ProcessRFPacket(SX12xxDriverCommon::rx_status const status)
             OtaIsFullRes ? &otaPktPtr->full.sync.sync : &otaPktPtr->std.sync)
             && !InBindingMode;
         break;
-    // case PACKET_TYPE_TLM:
-    //     if (firmwareOptions.is_airport)
-    //     {
-    //         OtaUnpackAirportData(otaPktPtr, &apOutputBuffer);
-    //     }
-    //     break;
+    case PACKET_TYPE_TLM:
+            OtaUnpackAirportData(otaPktPtr, &apOutputBuffer);
+        break;
     default:
         break;
     }
@@ -1133,7 +1130,7 @@ void TimerHandler()
 void setupBasicHardWare()
 {
     // UART
-    Serial.begin(420000);
+    Serial.begin(9600);
     // LED
     pinMode(PC13, OUTPUT);
     digitalWrite(PC13, HIGH);
@@ -1233,7 +1230,7 @@ void loop() // ELRS移植，注释源码另起修改
 
     // read and process any data from serial ports, send any queued non-RC data
     // handleSerialIO();
-    HandleUARTin();
+    // HandleUARTin();
     HandleUARTout();
 
     // CheckConfigChangePending();
