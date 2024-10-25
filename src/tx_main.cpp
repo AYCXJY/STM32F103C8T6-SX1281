@@ -1,28 +1,21 @@
-// 日期：2024年10月24日
+// 日期：2024年10月25日
 
 // 完成项：
 // 默认绑定与换绑（使用EEPROM存储UID）（使用OTA封装发送绑定包）
 // FHSS跳频通信
 // 可选通信速率（Lora MAX -> 500HZ）
 // 同步和断线重连
-
-// 下阶段：实现一个无线双向透传，不需要确认和重传。
-
-// 需求项：发射机和接收机都需要启用半双工模式，依据TLM回传逻辑收发包，使用PC串口接收和发送数据。
-// 需求细分：第一步：实现从PC串口助手读取数据后回传；(完成)
-//          第二步：实现单向透传；(完成)
-//          第三步：启用TLM，实现双向透传；（完成）
+// 无线双向透传功能（Bug：从串口一次性传输15字节及以上数据时会堵塞乱套）
 
 // 可选功能项：
 // 使用Stubborn实现可靠数据传输
-// 添加遥测数据回传
 // 通道数据填充与解析
 // 链路质量
 
 // 优化项：
-// 使用Radio.Rxnb()单次传输降低功耗（完成）
 // 动态功率降低功耗
 // logging调试库的使用
+
 /* ELRS include */
 
 #include "rxtx_common.h"
@@ -169,9 +162,9 @@ bool ICACHE_RAM_ATTR ProcessTLMpacket(SX12xxDriverCommon::rx_status const status
   // Full res mode
   if (OtaIsFullRes)
   {
-    OTA_Packet8_s * const ota8 = (OTA_Packet8_s * const)otaPktPtr;
-    uint8_t *telemPtr;
-    uint8_t dataLen;
+    // OTA_Packet8_s * const ota8 = (OTA_Packet8_s * const)otaPktPtr;
+    // uint8_t *telemPtr;
+    // uint8_t dataLen;
     // if (ota8->tlm_dl.containsLinkStats)
     // {
     //   LinkStatsFromOta(&ota8->tlm_dl.ul_link_stats.stats);
@@ -181,6 +174,7 @@ bool ICACHE_RAM_ATTR ProcessTLMpacket(SX12xxDriverCommon::rx_status const status
     // else
     {
       // if (firmwareOptions.is_airport)
+      if(otaPktPtr->full.airport.count)
       {
         OtaUnpackAirportData(otaPktPtr, &apOutputBuffer);
         receivecount++;
@@ -428,6 +422,15 @@ void ICACHE_RAM_ATTR SendRCdataToRF() // ELRS移植，注释源码另起修改
       otaPkt.std.type = PACKET_TYPE_MSPDATA;
       if (OtaIsFullRes)
       {
+        otaPkt.full.msp_ul.packageIndex = 1;
+        if (InBindingMode)
+        {
+          memcpy(&otaPkt.full.msp_ul.payload[0], MSPDataPackage, 5);
+        }
+        else
+        {
+          memcpy(&otaPkt.full.msp_ul.payload[0], "HELLO", 5);
+        }
         // otaPkt.full.msp_ul.packageIndex = MspSender.GetCurrentPayload(
         //   otaPkt.full.msp_ul.payload,
         //   sizeof(otaPkt.full.msp_ul.payload));
@@ -473,7 +476,10 @@ void ICACHE_RAM_ATTR SendRCdataToRF() // ELRS移植，注释源码另起修改
 
   ///// Next, Calculate the CRC and put it into the buffer /////
   OtaGeneratePacketCrc(&otaPkt);
-  CRCvalue = otaPkt.std.crcLow | otaPkt.std.crcHigh;
+  if(OtaIsFullRes)
+    CRCvalue = otaPkt.full.crc;
+  else 
+    CRCvalue = otaPkt.std.crcLow | otaPkt.std.crcHigh;
   SX12XX_Radio_Number_t transmittingRadio = Radio.GetLastSuccessfulPacketRadio();
 
   // if (isDualRadio())
