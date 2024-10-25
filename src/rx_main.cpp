@@ -143,7 +143,8 @@ bool LockRFmode = false;
 #define SCREEN_HEIGHT  64
 Adafruit_SSD1306 display(OLED_RESET);
 
-#define airRate RATE_LORA_500HZ
+#define AIRRATE RATE_LORA_333HZ_8CH
+#define BUADRATE 14400
 
 uint16_t fullScount;
 uint16_t fullSfreq;
@@ -1008,7 +1009,7 @@ static void setupRadio() // ELRS移植，注释源码另起修改
     Radio.RXdoneCallback = &RXdoneISR;
     Radio.TXdoneCallback = &TXdoneISR;
 
-    SetRFLinkRate(enumRatetoIndex(airRate), false);
+    SetRFLinkRate(enumRatetoIndex(AIRRATE), false);
     // scanIndex = config.GetRateInitialIdx();
     // SetRFLinkRate(scanIndex, false);
     // // Start slow on the selected rate to give it the best chance
@@ -1101,7 +1102,7 @@ static void ExitBindingMode() // ELRS移植，注释源码另起修改
     webserverPreventAutoStart = true;
     #endif
 
-    SetRFLinkRate(enumRatetoIndex(airRate), false);
+    SetRFLinkRate(enumRatetoIndex(AIRRATE), false);
     Radio.RXnb();
     // // Force RF cycling to start at the beginning immediately
     // scanIndex = RATE_MAX;
@@ -1319,7 +1320,7 @@ void TimerHandler()
 void setupBasicHardWare()
 {
     // UART
-    Serial.begin(9600);
+    Serial.begin(BUADRATE);
     // LED
     pinMode(PC13, OUTPUT);
     digitalWrite(PC13, HIGH);

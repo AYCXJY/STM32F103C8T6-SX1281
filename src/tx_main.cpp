@@ -115,7 +115,8 @@ uint8_t CRSFinBuffer[CRSF_MAX_PACKET_LEN+1];
 #define SCREEN_HEIGHT 64
 Adafruit_SSD1306 display(OLED_RESET);
 
-#define airRate RATE_LORA_500HZ
+#define AIRRATE RATE_LORA_333HZ_8CH
+#define BUADRATE 14400
 
 uint16_t fullScount;
 uint16_t fullSfreq;
@@ -716,7 +717,7 @@ static void ExitBindingMode() // ELRS移植，注释源码另起修改
     InBindingMode = false; 
     
     //return to original rate
-    SetRFLinkRate(enumRatetoIndex(airRate));
+    SetRFLinkRate(enumRatetoIndex(AIRRATE));
     // SetRFLinkRate(config.GetRate()); 
 
     Serial.println("Exiting binding mode");
@@ -825,7 +826,7 @@ void handleButtonPress(void)
 void setupBasicHardWare(void)
 {
     // UART
-    Serial.begin(9600);
+    Serial.begin(BUADRATE);
     // LED
     pinMode(PC13, OUTPUT);
     digitalWrite(PC13, HIGH);
@@ -866,7 +867,7 @@ void setup()
 
     // TelemetryReceiver.SetDataToReceive(CRSFinBuffer, sizeof(CRSFinBuffer));
 
-    SetRFLinkRate(enumRatetoIndex(airRate));
+    SetRFLinkRate(enumRatetoIndex(AIRRATE));
 
     hwTimer::init(nullptr, HWtimerCallbackTock);
     hwTimer::resume();
