@@ -1,4 +1,4 @@
-// 日期：2024年10月25日
+// 日期：2024年10月28日
 
 // 完成项：
 // 默认绑定与换绑（使用EEPROM存储UID）（使用OTA封装发送绑定包）
@@ -6,9 +6,15 @@
 // 可选通信速率（Lora MAX -> 500HZ）
 // 同步和断线重连
 // 无线双向透传功能（Bug：从串口一次性传输15字节及以上数据时会堵塞乱套）
+//                 补丁：将UARTin和UARTout放在loop里，禁用OLED->或者降低刷新率，即可实现无限制数据量串口收发；
+
+// 进行中：
+// 使用Stubborn实现可靠数据传输
+// 1. 熟悉Stubborn函数，添加初始化配置函数；
+// 2. 在收发包里添加确认位；
+// 3. 发送一次连续递增的数据，查看MSP接收缓冲区数据是否完整；
 
 // 可选功能项：
-// 使用Stubborn实现可靠数据传输
 // 通道数据填充与解析
 // 链路质量
 
@@ -52,54 +58,54 @@
 
 /* ELRS variable */
 
-#define MSP_PACKET_SEND_INTERVAL 10LU
+// #define MSP_PACKET_SEND_INTERVAL 10LU
 
-MSP msp;
+// MSP msp;
 ELRS_EEPROM eeprom;
 
 FIFO<AP_MAX_BUF_LEN> apInputBuffer;
 FIFO<AP_MAX_BUF_LEN> apOutputBuffer;
 
-#define UART_INPUT_BUF_LEN 1024
-FIFO<UART_INPUT_BUF_LEN> uartInputBuffer;
+// #define UART_INPUT_BUF_LEN 1024
+// FIFO<UART_INPUT_BUF_LEN> uartInputBuffer;
 
-// Buffer for current stubbon sender packet (mavlink only)
-uint8_t mavlinkSSBuffer[CRSF_MAX_PACKET_LEN]; 
+// // Buffer for current stubbon sender packet (mavlink only)
+// uint8_t mavlinkSSBuffer[CRSF_MAX_PACKET_LEN]; 
 
-bool NextPacketIsMspData = false;  
+// bool NextPacketIsMspData = false;  
 
-#define syncSpamAmount 3
-#define syncSpamAmountAfterRateChange 10
-volatile uint8_t syncSpamCounter = 0;
-volatile uint8_t syncSpamCounterAfterRateChange = 0;
-uint32_t rfModeLastChangedMS = 0;
-uint32_t SyncPacketLastSent = 0;
+// #define syncSpamAmount 3
+// #define syncSpamAmountAfterRateChange 10
+// volatile uint8_t syncSpamCounter = 0;
+// volatile uint8_t syncSpamCounterAfterRateChange = 0;
+// uint32_t rfModeLastChangedMS = 0;
+// uint32_t SyncPacketLastSent = 0;
 
 
-volatile uint32_t LastTLMpacketRecvMillis = 0;
-uint32_t TLMpacketReported = 0;
-static bool commitInProgress = false;
+// volatile uint32_t LastTLMpacketRecvMillis = 0;
+// uint32_t TLMpacketReported = 0;
+// static bool commitInProgress = false;
 
-LQCALC<25> LQCalc;
+// LQCALC<25> LQCalc;
 
-// volatile bool busyTransmitting;
-static volatile bool ModelUpdatePending;
+// // volatile bool busyTransmitting;
+// static volatile bool ModelUpdatePending;
 
 uint8_t MSPDataPackage[5];
 #define BindingSpamAmount 25
 static uint8_t BindingSendCount;
-bool RxWiFiReadyToSend = false;
+// bool RxWiFiReadyToSend = false;
 
-bool headTrackingEnabled = false;
-#if !defined(CRITICAL_FLASH)
-static uint16_t ptrChannelData[3] = {CRSF_CHANNEL_VALUE_MID, CRSF_CHANNEL_VALUE_MID, CRSF_CHANNEL_VALUE_MID};
-static uint32_t lastPTRValidTimeMs;
-#endif
+// bool headTrackingEnabled = false;
+// #if !defined(CRITICAL_FLASH)
+// static uint16_t ptrChannelData[3] = {CRSF_CHANNEL_VALUE_MID, CRSF_CHANNEL_VALUE_MID, CRSF_CHANNEL_VALUE_MID};
+// static uint32_t lastPTRValidTimeMs;
+// #endif
 
 static TxTlmRcvPhase_e TelemetryRcvPhase = ttrpTransmitting;
-StubbornReceiver TelemetryReceiver;
-StubbornSender MspSender;
-uint8_t CRSFinBuffer[CRSF_MAX_PACKET_LEN+1];
+// StubbornReceiver TelemetryReceiver;
+// StubbornSender MspSender;
+// uint8_t CRSFinBuffer[CRSF_MAX_PACKET_LEN+1];
 
 /* User variable */
 
@@ -120,16 +126,18 @@ uint16_t sendfreq;
 uint16_t receivecount;
 uint16_t receivefreq;
 
-uint8_t CRCvalue;
-
-uint8_t waitforTimSyncount;
+uint8_t serialBufferSize;
+uint8_t apInputBufferSize;
+uint8_t apOutputBufferSize;
 
 #define TIMER_INTERVAL_MS 1000000
 STM32Timer ITimer(TIM2);
 
+uint8_t CRCvalue;
+
 /* ELRS Function*/
 
-bool ICACHE_RAM_ATTR ProcessTLMpacket(SX12xxDriverCommon::rx_status const status)
+bool ICACHE_RAM_ATTR ProcessTLMpacket(SX12xxDriverCommon::rx_status const status) // ELRS移植，注释源码另起修改
 {
   if (status != SX12xxDriverCommon::SX12XX_RX_OK)
   {
@@ -142,16 +150,18 @@ bool ICACHE_RAM_ATTR ProcessTLMpacket(SX12xxDriverCommon::rx_status const status
   if (!OtaValidatePacketCrc(otaPktPtr))
   {
     Serial.println("TLM crc error");
+    // DBGLN("TLM crc error");
     return false;
   }
 
   if (otaPktPtr->std.type != PACKET_TYPE_TLM)
   {
     Serial.println("TLM type error " + String(otaPktPtr->std.type));
+    // DBGLN("TLM type error %d", otaPktPtr->std.type);
     return false;
   }
 
-  LastTLMpacketRecvMillis = millis();
+  // LastTLMpacketRecvMillis = millis();
   // LQCalc.add();
 
   // Radio.GetLastPacketStats();
@@ -173,11 +183,11 @@ bool ICACHE_RAM_ATTR ProcessTLMpacket(SX12xxDriverCommon::rx_status const status
     // }
     // else
     {
-      // if (firmwareOptions.is_airport)
       if(otaPktPtr->full.airport.count)
+      // if (firmwareOptions.is_airport)
       {
-        OtaUnpackAirportData(otaPktPtr, &apOutputBuffer);
         receivecount++;
+        OtaUnpackAirportData(otaPktPtr, &apOutputBuffer);
         return true;
       }
       // telemPtr = ota8->tlm_dl.payload;
@@ -198,8 +208,8 @@ bool ICACHE_RAM_ATTR ProcessTLMpacket(SX12xxDriverCommon::rx_status const status
       case ELRS_TELEMETRY_TYPE_DATA:
         // if (firmwareOptions.is_airport)
         {
-          OtaUnpackAirportData(otaPktPtr, &apOutputBuffer);
           receivecount++;
+          OtaUnpackAirportData(otaPktPtr, &apOutputBuffer);
           return true;
         }
         // TelemetryReceiver.ReceiveData(otaPktPtr->std.tlm_dl.packageIndex & ELRS4_TELEMETRY_MAX_PACKAGES,
@@ -342,14 +352,13 @@ void ICACHE_RAM_ATTR HandleFHSS() // ELRS移植，注释源码另起修改
     //     }
     // }
     // else
-    // if(waitforTimSyncount == 0)
     {
       Radio.SetFrequencyReg(FHSSgetNextFreq());
     }
   }
 }
 
-void ICACHE_RAM_ATTR HandlePrepareForTLM()
+void ICACHE_RAM_ATTR HandlePrepareForTLM() // ELRS移植，注释源码另起修改
 {
   // If TLM enabled and next packet is going to be telemetry, start listening to have a large receive window (time-wise)
   if (ExpressLRS_currTlmDenom != 1 && ((OtaNonce + 1) % ExpressLRS_currTlmDenom) == 0)
@@ -380,9 +389,9 @@ void ICACHE_RAM_ATTR SendRCdataToRF() // ELRS移植，注释源码另起修改
   //   }
   // }
 
-//   busyTransmitting = true;
+  // busyTransmitting = true;
 
-  uint32_t const now = millis();
+  // uint32_t const now = millis();
   // ESP requires word aligned buffer
   WORD_ALIGNED_ATTR OTA_Packet_s otaPkt = {0};
 //   static uint8_t syncSlot;
@@ -396,20 +405,21 @@ void ICACHE_RAM_ATTR SendRCdataToRF() // ELRS移植，注释源码另起修改
   uint8_t NonceFHSSresult = OtaNonce % ExpressLRS_currAirRate_Modparams->FHSShopInterval;
 
   // Sync spam only happens on slot 1 and 2 and can't be disabled
-  if (/*(syncSpamCounter || (syncSpamCounterAfterRateChange &&*/!InBindingMode && FHSSonSyncChannel()/* && (NonceFHSSresult == 1 || NonceFHSSresult == 2)*/)
+  if (!InBindingMode && FHSSonSyncChannel())
+  // if ((syncSpamCounter || (syncSpamCounterAfterRateChange && FHSSonSyncChannel())) && (NonceFHSSresult == 1 || NonceFHSSresult == 2))
   {
     otaPkt.std.type = PACKET_TYPE_SYNC;
     GenerateSyncPacketData(OtaIsFullRes ? &otaPkt.full.sync.sync : &otaPkt.std.sync);
     // syncSlot = 0; // reset the sync slot in case the new rate (after the syncspam) has a lower FHSShopInterval
   }
-  // Regular sync rotates through 4x slots, twice on each slot, and telemetry pushes it to the next slot up
-  // But only on the sync FHSS channel and with a timed delay between them
-//   else if ((!skipSync) && ((syncSlot / 2) <= NonceFHSSresult) && (now - SyncPacketLastSent > SyncInterval) && FHSSonSyncChannel())
-//   {
-//     otaPkt.std.type = PACKET_TYPE_SYNC;
-//     GenerateSyncPacketData(OtaIsFullRes ? &otaPkt.full.sync.sync : &otaPkt.std.sync);
-//     syncSlot = (syncSlot + 1) % (ExpressLRS_currAirRate_Modparams->FHSShopInterval * 2);
-//   }
+  // // Regular sync rotates through 4x slots, twice on each slot, and telemetry pushes it to the next slot up
+  // // But only on the sync FHSS channel and with a timed delay between them
+  // else if ((!skipSync) && ((syncSlot / 2) <= NonceFHSSresult) && (now - SyncPacketLastSent > SyncInterval) && FHSSonSyncChannel())
+  // {
+  //   otaPkt.std.type = PACKET_TYPE_SYNC;
+  //   GenerateSyncPacketData(OtaIsFullRes ? &otaPkt.full.sync.sync : &otaPkt.std.sync);
+  //   syncSlot = (syncSlot + 1) % (ExpressLRS_currAirRate_Modparams->FHSShopInterval * 2);
+  // }
   else if(apInputBuffer.size())
   {
     OtaPackAirportData(&otaPkt, &apInputBuffer);
@@ -466,20 +476,22 @@ void ICACHE_RAM_ATTR SendRCdataToRF() // ELRS移植，注释源码另起修改
     }
     // else
     // {
-      // // always enable msp after a channel package since the slot is only used if MspSender has data to send
-      // NextPacketIsMspData = true;
+    //   // always enable msp after a channel package since the slot is only used if MspSender has data to send
+    //   NextPacketIsMspData = true;
 
-      // injectBackpackPanTiltRollData(now);
-      // OtaPackChannelData(&otaPkt, ChannelData, TelemetryReceiver.GetCurrentConfirm(), ExpressLRS_currTlmDenom);
+    //   injectBackpackPanTiltRollData(now);
+    //   OtaPackChannelData(&otaPkt, ChannelData, TelemetryReceiver.GetCurrentConfirm(), ExpressLRS_currTlmDenom);
     // }
   }
 
   ///// Next, Calculate the CRC and put it into the buffer /////
   OtaGeneratePacketCrc(&otaPkt);
+
   if(OtaIsFullRes)
     CRCvalue = otaPkt.full.crc;
   else 
     CRCvalue = otaPkt.std.crcLow | otaPkt.std.crcHigh;
+    
   SX12XX_Radio_Number_t transmittingRadio = Radio.GetLastSuccessfulPacketRadio();
 
   // if (isDualRadio())
@@ -522,8 +534,9 @@ void ICACHE_RAM_ATTR SendRCdataToRF() // ELRS移植，注释源码另起修改
 
 static void HandleUARTin()
 {
-    if(Serial.available())
-    {
+    if(serialBufferSize = Serial.available())
+    // if(Serial.available())
+    { 
         auto size = std::min(apInputBuffer.free(), (uint16_t)Serial.available());
         if (size > 0)
         {
@@ -555,8 +568,6 @@ static void HandleUARTout()
 
 void ICACHE_RAM_ATTR HWtimerCallbackTock() // ELRS移植，注释源码另起修改
 {
-  HandleUARTin();
-  HandleUARTout();
   static uint16_t tockcount = 0;
   tockcount++;
   if (tockcount >= (1000000 / ExpressLRS_currAirRate_Modparams->interval))
@@ -571,32 +582,32 @@ void ICACHE_RAM_ATTR HWtimerCallbackTock() // ELRS移植，注释源码另起修
     fullRfreq = fullRcount;
     fullRcount = 0;
   }
-//   /* If we are busy writing to EEPROM (committing config changes) then we just advance the nonces, i.e. no SPI traffic */
-//   if (commitInProgress)
-//   {
-//     nonceAdvance();
-//     return;
-//   }
+  // /* If we are busy writing to EEPROM (committing config changes) then we just advance the nonces, i.e. no SPI traffic */
+  // if (commitInProgress)
+  // {
+  //   nonceAdvance();
+  //   return;
+  // }
 
-//   Radio.isFirstRxIrq = true;
+  // Radio.isFirstRxIrq = true;
 
-//   // Sync OpenTX to this point
-//   if (!(OtaNonce % ExpressLRS_currAirRate_Modparams->numOfSends))
-//   {
-//     handset->JustSentRFpacket();
-//   }
+  // // Sync OpenTX to this point
+  // if (!(OtaNonce % ExpressLRS_currAirRate_Modparams->numOfSends))
+  // {
+  //   handset->JustSentRFpacket();
+  // }
 
-//   // Do not transmit or advance FHSS/Nonce until in disconnected/connected state
-//   if (connectionState == awaitingModelId)
-//     return;
+  // // Do not transmit or advance FHSS/Nonce until in disconnected/connected state
+  // if (connectionState == awaitingModelId)
+  //   return;
 
-//   // Tx Antenna Diversity
-//   if ((OtaNonce % ExpressLRS_currAirRate_Modparams->numOfSends == 0 || // Swicth with new packet data
-//       OtaNonce % ExpressLRS_currAirRate_Modparams->numOfSends == ExpressLRS_currAirRate_Modparams->numOfSends / 2) && // Swicth in the middle of DVDA sends
-//       TelemetryRcvPhase == ttrpTransmitting) // Only switch when transmitting.  A diversity rx will send tlm back on the best antenna.  So dont switch away from it.
-//   {
-//     switchDiversityAntennas();
-//   }
+  // // Tx Antenna Diversity
+  // if ((OtaNonce % ExpressLRS_currAirRate_Modparams->numOfSends == 0 || // Swicth with new packet data
+  //     OtaNonce % ExpressLRS_currAirRate_Modparams->numOfSends == ExpressLRS_currAirRate_Modparams->numOfSends / 2) && // Swicth in the middle of DVDA sends
+  //     TelemetryRcvPhase == ttrpTransmitting) // Only switch when transmitting.  A diversity rx will send tlm back on the best antenna.  So dont switch away from it.
+  // {
+  //   switchDiversityAntennas();
+  // }
 
   // Nonce advances on every timer tick
   if (!InBindingMode)
@@ -627,7 +638,7 @@ void ICACHE_RAM_ATTR HWtimerCallbackTock() // ELRS移植，注释源码另起修
   SendRCdataToRF();
 }
 
-bool ICACHE_RAM_ATTR RXdoneISR(SX12xxDriverCommon::rx_status const status)
+bool ICACHE_RAM_ATTR RXdoneISR(SX12xxDriverCommon::rx_status const status) // ELRS移植，注释源码另起修改
 {
   fullRcount++;
   // if (LQCalc.currentIsSet())
@@ -675,16 +686,18 @@ void SendUIDOverMSP() // ELRS移植，注释源码另起修改
   MSPDataPackage[0] = MSP_ELRS_BIND;
   memcpy(&MSPDataPackage[1], &UID[2], 4);
   BindingSendCount = 0;
-//   MspSender.ResetState();
-//   MspSender.SetDataToTransmit(MSPDataPackage, 5);
+  // MspSender.ResetState();
+  // MspSender.SetDataToTransmit(MSPDataPackage, 5);
 }
 
 static void EnterBindingMode() // ELRS移植，注释源码另起修改
 {
     if (InBindingMode)
         return;
+
     // 点亮LED
     digitalWrite(PC13, 0);
+
     // Disable the TX timer and wait for any TX to complete
     hwTimer::stop();
     // while (busyTransmitting);
@@ -710,34 +723,33 @@ static void EnterBindingMode() // ELRS移植，注释源码另起修改
 
 static void ExitBindingMode() // ELRS移植，注释源码另起修改
 {
-    if (!InBindingMode)
-        return;
-    // 熄灭LED
-    digitalWrite(PC13, 1);
+  if (!InBindingMode)
+    return;
 
-    // MspSender.ResetState();
+  // 熄灭LED
+  digitalWrite(PC13, 1);
 
-    // Reset CRCInit to UID-defined value
-    OtaUpdateCrcInitFromUid();
-    // Clear binding mode before SetRFLinkRate() for correct IQ
-    InBindingMode = false; 
-    
-    //return to original rate
-    SetRFLinkRate(enumRatetoIndex(AIRRATE));
-    // SetRFLinkRate(config.GetRate()); 
+  // MspSender.ResetState();
 
-    Serial.println("Exiting binding mode");
-//   DBGLN("Exiting binding mode");
-  // waitforTimSyncount = 2;
+  // Reset CRCInit to UID-defined value
+  OtaUpdateCrcInitFromUid();
+  InBindingMode = false; // Clear binding mode before SetRFLinkRate() for correct IQ
+
+  //return to original rate
+  SetRFLinkRate(enumRatetoIndex(AIRRATE));
+  // SetRFLinkRate(config.GetRate()); 
+
+  Serial.println("Exiting binding mode");
+  // DBGLN("Exiting binding mode");
 }
 
 static void setupBindingFromConfig() // ELRS移植，注释源码另起修改
 {
-//   if (firmwareOptions.hasUID)
-//   {
-//       memcpy(UID, firmwareOptions.uid, UID_LEN);
-//   }
-//   else
+  // if (firmwareOptions.hasUID)
+  // {
+  //     memcpy(UID, firmwareOptions.uid, UID_LEN);
+  // }
+  // else
   {
 #ifdef PLATFORM_ESP32
     esp_read_mac(UID, ESP_MAC_WIFI_STA);
@@ -750,12 +762,13 @@ static void setupBindingFromConfig() // ELRS移植，注释源码另起修改
     UID[5] = (uint8_t)(HAL_GetUIDw2() >> 8);
 #endif
   }
+
     Serial.print("UID ");
     for (int i = 0; i < sizeof(UID); i++)
-        Serial.print(String(UID[i]) + " ");
+      Serial.print(String(UID[i]) + " ");
     Serial.println();
-//   DBGLN("UID=(%d, %d, %d, %d, %d, %d)",
-//     UID[0], UID[1], UID[2], UID[3], UID[4], UID[5]);
+  // DBGLN("UID=(%d, %d, %d, %d, %d, %d)",
+  //   UID[0], UID[1], UID[2], UID[3], UID[4], UID[5]);
 
   OtaUpdateCrcInitFromUid();
 }
@@ -829,6 +842,11 @@ void handleButtonPress(void)
     }
 }
 
+void TimerHandler()
+{
+
+}
+
 void setupBasicHardWare(void)
 {
     // UART
@@ -851,17 +869,17 @@ void setupBasicHardWare(void)
     // sx1280 GPIO
     pinMode(GPIO_PIN_TX_EN, OUTPUT);
     pinMode(GPIO_PIN_RX_EN, OUTPUT);
+    // TIM2
+    ITimer.attachInterruptInterval(TIMER_INTERVAL_MS, TimerHandler);
 }
-
 
 /* setup and loop */
 
-void setup()
+void setup() // 保留Stubborn模块注释
 {
     setupBasicHardWare();
 
     setupBindingFromConfig();
-
     FHSSrandomiseFHSSsequence(uidMacSeedGet());
 
     Radio.TXdoneCallback = &TXdoneISR;
@@ -877,45 +895,48 @@ void setup()
 
     hwTimer::init(nullptr, HWtimerCallbackTock);
     hwTimer::resume();
+
     ExpressLRS_currTlmDenom = 2;
 }
 
 void loop()
 {
-    // uint32_t now = millis();
-    // only send msp data when binding is not active
-    // static bool mspTransferActive = false;
-    if (InBindingMode)
-    {
-        // exit bind mode if package after some repeats
-        if (BindingSendCount > BindingSpamAmount)
-        {
-            ExitBindingMode();
-        }
+  // uint32_t now = millis();
+
+  HandleUARTout();
+  
+  HandleUARTin();
+
+  // // only send msp data when binding is not active
+  // static bool mspTransferActive = false;
+  if (InBindingMode)
+  {
+    // exit bind mode if package after some repeats
+    if (BindingSendCount > BindingSpamAmount) {
+      ExitBindingMode();
     }
-    //     else if (!MspSender.IsActive())
-    //     {
-    //         // sending is done and we need to update our flag
-    //         if (mspTransferActive)
-    //         {
-    //             // unlock buffer for msp messages
-    //             CRSF::UnlockMspMessage();
-    //             mspTransferActive = false;
-    //         }
-    //         // we are not sending so look for next msp package
-    //         else
-    //         {
-    //             uint8_t* mspData;
-    //             uint8_t mspLen;
-    //             CRSF::GetMspMessage(&mspData, &mspLen);
-    //             // if we have a new msp package start sending
-    //             if (mspData != nullptr)
-    //             {
-    //                 MspSender.SetDataToTransmit(mspData, mspLen);
-    //                 mspTransferActive = true;
-    //             }
-    //         }
-    //     }
-    
-    displayDebugInfo();
+  }
+  // else if (!MspSender.IsActive())
+  // {
+  //   // sending is done and we need to update our flag
+  //   if (mspTransferActive)
+  //   {
+  //     // unlock buffer for msp messages
+  //     CRSF::UnlockMspMessage();
+  //     mspTransferActive = false;
+  //   }
+  //   // we are not sending so look for next msp package
+  //   else
+  //   {
+  //     uint8_t* mspData;
+  //     uint8_t mspLen;
+  //     CRSF::GetMspMessage(&mspData, &mspLen);
+  //     // if we have a new msp package start sending
+  //     if (mspData != nullptr)
+  //     {
+  //       MspSender.SetDataToTransmit(mspData, mspLen);
+  //       mspTransferActive = true;
+  //     }
+  //   }
+  // }
 }
