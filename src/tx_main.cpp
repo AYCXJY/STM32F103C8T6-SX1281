@@ -1,4 +1,4 @@
-// 更新日期：2024年10月28日
+// 更新日期：2024年10月29日
 
 // 已实现项：
 // - 设备绑定与换绑；
@@ -9,6 +9,8 @@
 
 // 进行中项：
 // - 使用Stubborn实现可靠数据传输
+//   - 禁用AirPort，使用MSP <-> TLM 常规链路发送
+//     
 
 /* ELRS include */
 
@@ -110,10 +112,10 @@ uint16_t fullScount;
 uint16_t fullSfreq;
 uint16_t fullRcount;
 uint16_t fullRfreq;
-uint16_t sendcount;
-uint16_t sendfreq;
-uint16_t receivecount;
-uint16_t receivefreq;
+uint16_t validSendCount;
+uint16_t validSendFreq;
+uint16_t validReceiveCount;
+uint16_t validReceiveFreq;
 
 uint8_t serialBufferSize;
 uint8_t apInputBufferSize;
@@ -123,6 +125,12 @@ uint8_t apOutputBufferSize;
 STM32Timer ITimer(TIM2);
 
 uint8_t CRCvalue;
+
+bool telemetryConfirmExpectedValue = true;
+WORD_ALIGNED_ATTR OTA_Packet_s lastOtaPkt;
+bool Resend;
+
+bool telemetryConfirmValue = false;
 
 /* ELRS Function*/
 
@@ -175,9 +183,18 @@ bool ICACHE_RAM_ATTR ProcessTLMpacket(SX12xxDriverCommon::rx_status const status
       if(otaPktPtr->full.airport.count)
       // if (firmwareOptions.is_airport)
       {
-        receivecount++;
-        OtaUnpackAirportData(otaPktPtr, &apOutputBuffer);
-        return true;
+        if(otaPktPtr->full.airport.containsLinkStats == telemetryConfirmExpectedValue)
+        {
+          validReceiveCount++;
+          OtaUnpackAirportData(otaPktPtr, &apOutputBuffer);
+          telemetryConfirmExpectedValue = !telemetryConfirmExpectedValue;
+          return true;
+        }
+        else 
+        {
+          Resend = true;
+        }
+
       }
       // telemPtr = ota8->tlm_dl.payload;
       // dataLen = sizeof(ota8->tlm_dl.payload);
@@ -194,17 +211,18 @@ bool ICACHE_RAM_ATTR ProcessTLMpacket(SX12xxDriverCommon::rx_status const status
       //   LinkStatsFromOta(&otaPktPtr->std.tlm_dl.ul_link_stats.stats);
       //   break;
 
-      case ELRS_TELEMETRY_TYPE_DATA:
-        // if (firmwareOptions.is_airport)
-        {
-          receivecount++;
-          OtaUnpackAirportData(otaPktPtr, &apOutputBuffer);
-          return true;
-        }
-        // TelemetryReceiver.ReceiveData(otaPktPtr->std.tlm_dl.packageIndex & ELRS4_TELEMETRY_MAX_PACKAGES,
-        //   otaPktPtr->std.tlm_dl.payload,
-        //   sizeof(otaPktPtr->std.tlm_dl.payload));
-        break;
+      // case ELRS_TELEMETRY_TYPE_DATA:
+      //   if(otaPktPtr->std.airport.count)
+      //   // if (firmwareOptions.is_airport)
+      //   {
+      //     validReceiveCount++;
+      //     OtaUnpackAirportData(otaPktPtr, &apOutputBuffer);
+      //     return true;
+      //   }
+      //   // TelemetryReceiver.ReceiveData(otaPktPtr->std.tlm_dl.packageIndex & ELRS4_TELEMETRY_MAX_PACKAGES,
+      //   //   otaPktPtr->std.tlm_dl.payload,
+      //   //   sizeof(otaPktPtr->std.tlm_dl.payload));
+      //   break;
     }
   }
 
@@ -312,8 +330,8 @@ void SetRFLinkRate(uint8_t index) // ELRS移植，注释源码另起修改
     // CRSF::LinkStatistics.rf_Mode = ModParams->enum_rate;
 
     // handset->setPacketInterval(interval * ExpressLRS_currAirRate_Modparams->numOfSends);
-    // connectionState = disconnected;
-    // rfModeLastChangedMS = millis();
+    connectionState = disconnected;
+    rfModeLastChangedMS = millis();
 }
 
 void ICACHE_RAM_ATTR HandleFHSS() // ELRS移植，注释源码另起修改
@@ -408,10 +426,16 @@ void ICACHE_RAM_ATTR SendRCdataToRF() // ELRS移植，注释源码另起修改
   //   GenerateSyncPacketData(OtaIsFullRes ? &otaPkt.full.sync.sync : &otaPkt.std.sync);
   //   syncSlot = (syncSlot + 1) % (ExpressLRS_currAirRate_Modparams->FHSShopInterval * 2);
   // }
-  else if(apInputBuffer.size())
+  else if(!Resend && apInputBuffer.size())
   {
     OtaPackAirportData(&otaPkt, &apInputBuffer);
-    sendcount++;
+    lastOtaPkt = otaPkt;
+    validSendCount++;
+  }
+  else if(Resend)
+  {
+    otaPkt = lastOtaPkt;
+    Resend = false;
   }
   else
   {
@@ -427,7 +451,7 @@ void ICACHE_RAM_ATTR SendRCdataToRF() // ELRS移植，注释源码另起修改
         }
         else
         {
-          memcpy(&otaPkt.full.msp_ul.payload[0], "HELLO", 5);
+          // memcpy(&otaPkt.full.msp_ul.payload[0], "HELLO", 5);
         }
         // otaPkt.full.msp_ul.packageIndex = MspSender.GetCurrentPayload(
         //   otaPkt.full.msp_ul.payload,
@@ -444,7 +468,7 @@ void ICACHE_RAM_ATTR SendRCdataToRF() // ELRS移植，注释源码另起修改
         }
         else
         {
-          memcpy(&otaPkt.std.msp_ul.payload[0], "HELLO", 5);
+          // memcpy(&otaPkt.std.msp_ul.payload[0], "HELLO", 5);
         }
         // otaPkt.std.msp_ul.packageIndex = MspSender.GetCurrentPayload(
         //   otaPkt.std.msp_ul.payload,
@@ -561,10 +585,10 @@ void ICACHE_RAM_ATTR HWtimerCallbackTock() // ELRS移植，注释源码另起修
   if (tockcount >= (1000000 / ExpressLRS_currAirRate_Modparams->interval))
   {
     tockcount = 0;
-    sendfreq = sendcount;
-    sendcount = 0;
-    receivefreq = receivecount;
-    receivecount = 0;
+    validSendFreq = validSendCount;
+    validSendCount = 0;
+    validReceiveFreq = validReceiveCount;
+    validReceiveCount = 0;
     fullSfreq = fullScount;
     fullScount = 0;
     fullRfreq = fullRcount;
@@ -786,7 +810,7 @@ void displayDebugInfo()
         display.setCursor(0, 16);
         display.println("Send");
         display.setCursor(30, 16);
-        display.println(sendfreq);
+        display.println(validSendFreq);
         // full Send freq
         display.setCursor(54, 16);
         display.println("FullS");
@@ -796,7 +820,7 @@ void displayDebugInfo()
         display.setCursor(0, 24);
         display.println("Recv");
         display.setCursor(30, 24);
-        display.println(receivefreq);  
+        display.println(validReceiveFreq);  
         // full Recv freq
         display.setCursor(54, 24);
         display.println("FullR");
