@@ -1,22 +1,14 @@
-// 日期：2024年10月25日
+// 更新日期：2024年10月28日
 
-// 完成项：
-// 默认绑定与换绑（使用EEPROM存储UID）（使用OTA封装发送绑定包）
-// FHSS跳频通信
-// 可选通信速率（Lora MAX -> 500HZ）
-// 同步和断线重连
-// 无线双向透传功能（Bug：从串口一次性传输15字节及以上数据时会堵塞乱套）
+// 已实现项：
+// - 设备绑定与换绑；
+// - FHSS同步跳频通信；（健壮性差）
+// - 可变通信速率；
+// - 简易断线重连机制；（健壮性差）
+// - 双向透传功能；
 
-// 可选功能项：
-// 使用Stubborn实现可靠数据传输
-// 通道数据填充与解析
-// 链路质量
-
-// 优化项：
-// 动态功率降低功耗
-// logging调试库的使用
-
-
+// 进行中项：
+// - 使用Stubborn实现可靠数据传输
 
 /* ELRS include */
 
@@ -66,7 +58,7 @@
 
 #include <Adafruit_SSD1306.h>
 #include "TimerInterrupt_Generic.h"
-#include <algorithm> 
+
 /* ELRS variable */
 
 StubbornSender TelemetrySender;
@@ -136,7 +128,7 @@ bool LockRFmode = false;
 Adafruit_SSD1306 display(OLED_RESET);
 
 #define AIRRATE RATE_LORA_333HZ_8CH
-#define BUADRATE 14400
+#define BUADRATE 9600
 
 uint16_t fullScount;
 uint16_t fullSfreq;
@@ -283,11 +275,12 @@ bool ICACHE_RAM_ATTR HandleFHSS() // ELRS移植，注释源码另起修改
     return true;
 }
 
-bool ICACHE_RAM_ATTR HandleSendTelemetryResponse()
+bool ICACHE_RAM_ATTR HandleSendTelemetryResponse() // ELRS移植，注释源码另起修改
 {
     uint8_t modresult = (OtaNonce + 1) % ExpressLRS_currTlmDenom;
 
-    if ((connectionState == disconnected) || (ExpressLRS_currTlmDenom == 1) || (alreadyTLMresp == true) || (modresult != 0)/* || !teamraceHasModelMatch*/)
+    if ((connectionState == disconnected) || (ExpressLRS_currTlmDenom == 1) || (alreadyTLMresp == true) || (modresult != 0))
+    // if ((connectionState == disconnected) || (ExpressLRS_currTlmDenom == 1) || (alreadyTLMresp == true) || (modresult != 0) || !teamraceHasModelMatch)
     {
         return false; // don't bother sending tlm if disconnected or TLM is off
     }
@@ -352,8 +345,8 @@ bool ICACHE_RAM_ATTR HandleSendTelemetryResponse()
         //             sizeof(otaPkt.std.tlm_dl.payload));
         //     }
         // }
-        // else if (firmwareOptions.is_airport)
         if(apInputBuffer.size())
+        // else if (firmwareOptions.is_airport)
         {
             sendcount++;
             OtaPackAirportData(&otaPkt, &apInputBuffer);
@@ -443,14 +436,15 @@ int32_t ICACHE_RAM_ATTR HandleFreqCorr(bool value) // ELRS移植，注释源码�
 
 void ICACHE_RAM_ATTR updatePhaseLock() // ELRS移植，注释源码另起修改
 {
-    if (/*connectionState != disconnected && */PFDloop.hasResult() && PFDloop.calcResult() < 1500)
+    // if (PFDloop.hasResult() && PFDloop.calcResult() < 1500)
+    if (connectionState != disconnected && PFDloop.hasResult())
     {
         int32_t RawOffset = PFDloop.calcResult();
         int32_t Offset = LPF_Offset.update(RawOffset);
         int32_t OffsetDx = LPF_OffsetDx.update(RawOffset - PfdPrevRawOffset);
         PfdPrevRawOffset = RawOffset;
 
-        // if (RXtimerState == tim_locked)
+        if (RXtimerState == tim_locked)
         {
             // limit rate of freq offset adjustment, use slot 1
             // because telemetry can fall on slot 1 and will
@@ -468,11 +462,11 @@ void ICACHE_RAM_ATTR updatePhaseLock() // ELRS移植，注释源码另起修改
             }
         }
         // if (slack > 500)
-        // // if (connectionState != connected)
-        // {
-        //     hwTimer::phaseShift(RawOffset >> 1);
-        // }
-        // else
+        if (connectionState != connected)
+        {
+            hwTimer::phaseShift(RawOffset >> 1);
+        }
+        else
         {
             hwTimer::phaseShift(Offset >> 2);
         }
@@ -486,9 +480,7 @@ void ICACHE_RAM_ATTR updatePhaseLock() // ELRS移植，注释源码另起修改
 }
 
 void ICACHE_RAM_ATTR HWtimerCallbackTick() // ELRS移植，注释源码另起修改
-{   // this is 180 out of phase with the other callback, occurs mid-packet reception
-    
-    // User code 
+{   
     ticktime = micros();
     // Serial.println("tick " + String(ticktime - tocktime));
    
@@ -534,7 +526,6 @@ static void HandleUARTin()
             apInputBuffer.lock();
             apInputBuffer.pushBytes(buf, size);
             apInputBuffer.unlock();
-            digitalToggle(PC13);
         }
     }
 }
@@ -557,9 +548,6 @@ static void HandleUARTout()
 
 void ICACHE_RAM_ATTR HWtimerCallbackTock() // ELRS移植，注释源码另起修改
 {
-    // User code
-    HandleUARTin();
-    HandleUARTout();
     tocktime = micros();
     slack = tocktime - RxISRtime;
     // if(slack > 300)
@@ -591,7 +579,6 @@ void ICACHE_RAM_ATTR HWtimerCallbackTock() // ELRS移植，注释源码另起修
     // // For any serial drivers that need to send on a regular cadence (i.e. CRSF to betaflight)
     // sendImmediateRC();
 
-    // 如果因为在RXISR中因为CRC错误导致没有handleFHSS则在TOCK中处理
     if (!didFHSS)
     {
         HandleFHSS();
@@ -600,7 +587,6 @@ void ICACHE_RAM_ATTR HWtimerCallbackTock() // ELRS移植，注释源码另起修
 
     // Radio.isFirstRxIrq = true;
     // updateDiversity();
-
     tlmSent = HandleSendTelemetryResponse();
 
     #if defined(DEBUG_RX_SCOREBOARD)
@@ -827,6 +813,9 @@ static bool ICACHE_RAM_ATTR ProcessRfPacket_SYNC(uint32_t const now, OTA_Sync_s 
         OtaNonce = otaSync->nonce;
         // TentativeConnection(now);
         connectionState = connected;
+        // 点亮LED
+        digitalWrite(PC13, 0);
+        Serial.println("got connection");
         // // connectionHasModelMatch must come after TentativeConnection, which resets it
         // connectionHasModelMatch = modelMatched;
         return true;
@@ -849,10 +838,12 @@ bool ICACHE_RAM_ATTR ProcessRFPacket(SX12xxDriverCommon::rx_status const status)
     uint32_t const beginProcessing = micros();
 
     OTA_Packet_s * const otaPktPtr = (OTA_Packet_s * const)Radio.RXdataBuffer;
+    
     if(OtaIsFullRes)
         CRCvalue = otaPktPtr->full.crc;
     else 
         CRCvalue = otaPktPtr->std.crcLow | otaPktPtr->std.crcHigh;
+
     if (!OtaValidatePacketCrc(otaPktPtr))
     {
         Serial.println("CRC error");
@@ -862,6 +853,7 @@ bool ICACHE_RAM_ATTR ProcessRFPacket(SX12xxDriverCommon::rx_status const status)
         #endif
         return false;
     }
+
     PFDloop.extEvent(beginProcessing + PACKET_TO_TOCK_SLACK);
 
     doStartTimer = false;
@@ -883,8 +875,11 @@ bool ICACHE_RAM_ATTR ProcessRFPacket(SX12xxDriverCommon::rx_status const status)
             && !InBindingMode;
         break;
     case PACKET_TYPE_TLM:
+        // if (firmwareOptions.is_airport)
+        {
             receivecount++;
             OtaUnpackAirportData(otaPktPtr, &apOutputBuffer);
+        }
         break;
     default:
         break;
@@ -922,7 +917,6 @@ bool ICACHE_RAM_ATTR ProcessRFPacket(SX12xxDriverCommon::rx_status const status)
 
 bool ICACHE_RAM_ATTR RXdoneISR(SX12xxDriverCommon::rx_status const status) // ELRS移植，注释源码另起修改
 {
-    // User code 
     fullRcount++;
     RxISRtime = micros();
     // Serial.println("RXdoneISR " + String(RxISRtime));
@@ -947,9 +941,10 @@ bool ICACHE_RAM_ATTR RXdoneISR(SX12xxDriverCommon::rx_status const status) // EL
     return false;
 }
 
-void ICACHE_RAM_ATTR TXdoneISR()
+void ICACHE_RAM_ATTR TXdoneISR() // ELRS移植，注释源码另起修改
 {
     fullScount++;
+
     Radio.RXnb();
 #if defined(Regulatory_Domain_EU_CE_2400)
     SetClearChannelAssessmentTime();
@@ -1015,31 +1010,31 @@ static void setupRadio() // ELRS移植，注释源码另起修改
 /* If not connected will rotate through the RF modes looking for sync
  * and blink LED
  */
-static void cycleRfMode(unsigned long now)
-{
-    if (connectionState == connected || connectionState == wifiUpdate || InBindingMode)
-        return;
-
-    // Actually cycle the RF mode if not LOCK_ON_FIRST_CONNECTION
-    if (LockRFmode == false && (now - RFmodeLastCycled) > (cycleInterval * RFmodeCycleMultiplier))
-    {
-        RFmodeLastCycled = now;
-        LastSyncPacket = now;           // reset this variable
-        // SendLinkStatstoFCForcedSends = 2;
-        SetRFLinkRate(scanIndex % RATE_MAX, false); // switch between rates
-        LQCalc.reset100();
-        LQCalcDVDA.reset100();
-        // Display the current air rate to the user as an indicator something is happening
-        scanIndex++;
-        Radio.RXnb();
-
-        Serial.println(String(ExpressLRS_currAirRate_Modparams->interval));
-        // DBGLN("%u", ExpressLRS_currAirRate_Modparams->interval);
-
-        // Switch to FAST_SYNC if not already in it (won't be if was just connected)
-        RFmodeCycleMultiplier = 1;
-    } // if time to switch RF mode
-}
+// static void cycleRfMode(unsigned long now)
+// {
+//     if (connectionState == connected || connectionState == wifiUpdate || InBindingMode)
+//         return;
+//
+//     // Actually cycle the RF mode if not LOCK_ON_FIRST_CONNECTION
+//     if (LockRFmode == false && (now - RFmodeLastCycled) > (cycleInterval * RFmodeCycleMultiplier))
+//     {
+//         RFmodeLastCycled = now;
+//         LastSyncPacket = now;           // reset this variable
+//         // SendLinkStatstoFCForcedSends = 2;
+//         SetRFLinkRate(scanIndex % RATE_MAX, false); // switch between rates
+//         LQCalc.reset100();
+//         LQCalcDVDA.reset100();
+//         // Display the current air rate to the user as an indicator something is happening
+//         scanIndex++;
+//         Radio.RXnb();
+//
+//         Serial.println(String(ExpressLRS_currAirRate_Modparams->interval));
+//         // DBGLN("%u", ExpressLRS_currAirRate_Modparams->interval);
+//
+//         // Switch to FAST_SYNC if not already in it (won't be if was just connected)
+//         RFmodeCycleMultiplier = 1;
+//     } // if time to switch RF mode
+// }
 
 static void EnterBindingMode() // ELRS移植，注释源码另起修改
 {
@@ -1049,8 +1044,10 @@ static void EnterBindingMode() // ELRS移植，注释源码另起修改
         Serial.println("Already in binding mode");
         return;
     }
+
     // 点亮LED
     digitalWrite(PC13, 0);
+
     // Binding uses a CRCInit=0, 50Hz, and InvertIQ
     OtaCrcInitializer = 0;
     InBindingMode = true;
@@ -1080,8 +1077,10 @@ static void ExitBindingMode() // ELRS移植，注释源码另起修改
         Serial.println("Not in binding mode");
         return;
     }
+
     // 熄灭LED
     digitalWrite(PC13, 1);
+
     // MspReceiver.ResetState();
 
     // Prevent any new packets from coming in
@@ -1116,9 +1115,9 @@ static void ExitBindingMode() // ELRS移植，注释源码另起修改
 static void updateBindingMode(unsigned long now) // ELRS移植，注释源码另起修改
 {
     // Exit binding mode if the config has been modified, indicating UID has been set
-    if (InBindingMode && /*config.IsModified()*/ UIDIsModified/*自定义变量*/)
+    if (InBindingMode && UIDIsModified)
+    // if (InBindingMode && config.IsModified())
     {
-        Serial.println("UID modified only once");
         ExitBindingMode();
     }
 
@@ -1154,8 +1153,8 @@ static void updateBindingMode(unsigned long now) // ELRS移植，注释源码另
     // If the eeprom is indicating that we're not bound, enter binding
     else if (!UID_IS_BOUND(UID) && !InBindingMode)
     {
-        // DBGLN("RX has not been bound, enter binding mode");
         Serial.println("RX has not been bound, enter binding mode");
+        // DBGLN("RX has not been bound, enter binding mode");
         EnterBindingMode();
     }
 
@@ -1211,12 +1210,12 @@ void EnterBindingModeSafely() // ELRS移植，注释源码另起修改
     }
 #endif
 
-    // // If connected, handle that in updateBindingMode()
-    // if (connectionState == connected)
-    // {
-    //     BindingModeRequest = true;
-    //     return;
-    // }
+    // If connected, handle that in updateBindingMode()
+    if (connectionState == connected)
+    {
+        BindingModeRequest = true;
+        return;
+    }
 
     EnterBindingMode();
 }
@@ -1341,9 +1340,8 @@ void setupBasicHardWare()
 
 /* setup and loop */
 
-void setup() // 与ELRS初始化逻辑一致
+void setup()
 {
-    // 删除ELRS硬件初始化代码，适配BluePill硬件平台
     setupBasicHardWare();
 
     setupBindingFromConfig();
@@ -1363,19 +1361,16 @@ void setup() // 与ELRS初始化逻辑一致
     // setup() eats up some of this time, which can cause the first mode connection to fail.
     // Resetting the time here give the first mode a better chance of connection.
     RFmodeLastCycled = millis();
+
     ExpressLRS_currTlmDenom = 2;
 }
 
 void loop() // ELRS移植，注释源码另起修改
-{
+{    
+    HandleUARTin();
+    HandleUARTout();
     unsigned long now = millis();
-    // disconnect
-    if(slack / ExpressLRS_currAirRate_Modparams->interval > 5)
-    {
-        // Serial.println("lost connection");
-        connectionState = disconnected;
-        Radio.SetFrequencyReg(FHSSgetInitialFreq());
-    }
+
     // if (MspReceiver.HasFinishedData())
     // {
     //     MspReceiveComplete();
@@ -1383,7 +1378,7 @@ void loop() // ELRS移植，注释源码另起修改
 
     // devicesUpdate(now);
 
-    // read and process any data from serial ports, send any queued non-RC data
+    // // read and process any data from serial ports, send any queued non-RC data
     // handleSerialIO();
 
     // CheckConfigChangePending();
@@ -1399,6 +1394,19 @@ void loop() // ELRS移植，注释源码另起修改
     // {
     //     return;
     // }
+    if(receivefreq > 150)
+    {
+        RXtimerState = tim_locked;
+    }
+    if(connectionState != disconnected && slack / ExpressLRS_currAirRate_Modparams->interval > 5)
+    {
+        // 熄灭LED
+        digitalWrite(PC13, 1);
+        Serial.println("lost connection");
+        connectionState = disconnected;
+
+        Radio.SetFrequencyReg(FHSSgetInitialFreq());
+    }
 
     // if ((connectionState != disconnected) && (ExpressLRS_currAirRate_Modparams->index != ExpressLRS_nextAirRateIndex)){ // forced change
     //     Serial.println("Req air rate change " + String(ExpressLRS_currAirRate_Modparams->index) + " -> " + String(ExpressLRS_nextAirRateIndex));
@@ -1470,5 +1478,5 @@ void loop() // ELRS移植，注释源码另起修改
     // debugRcvrLinkstats();
     // debugRcvrSignalStats(now);
     
-    displayDebugInfo();
+    // displayDebugInfo();
 }

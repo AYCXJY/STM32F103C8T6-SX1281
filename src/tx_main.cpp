@@ -1,26 +1,14 @@
-// 日期：2024年10月28日
+// 更新日期：2024年10月28日
 
-// 完成项：
-// 默认绑定与换绑（使用EEPROM存储UID）（使用OTA封装发送绑定包）
-// FHSS跳频通信
-// 可选通信速率（Lora MAX -> 500HZ）
-// 同步和断线重连
-// 无线双向透传功能（Bug：从串口一次性传输15字节及以上数据时会堵塞乱套）
-//                 补丁：将UARTin和UARTout放在loop里，禁用OLED->或者降低刷新率，即可实现无限制数据量串口收发；
+// 已实现项：
+// - 设备绑定与换绑；
+// - FHSS同步跳频通信；
+// - 可变通信速率；
+// - 简易断线重连机制；
+// - 双向透传功能；
 
-// 进行中：
-// 使用Stubborn实现可靠数据传输
-// 1. 熟悉Stubborn函数，添加初始化配置函数；
-// 2. 在收发包里添加确认位；
-// 3. 发送一次连续递增的数据，查看MSP接收缓冲区数据是否完整；
-
-// 可选功能项：
-// 通道数据填充与解析
-// 链路质量
-
-// 优化项：
-// 动态功率降低功耗
-// logging调试库的使用
+// 进行中项：
+// - 使用Stubborn实现可靠数据传输
 
 /* ELRS include */
 
@@ -58,54 +46,54 @@
 
 /* ELRS variable */
 
-// #define MSP_PACKET_SEND_INTERVAL 10LU
+#define MSP_PACKET_SEND_INTERVAL 10LU
 
-// MSP msp;
+MSP msp;
 ELRS_EEPROM eeprom;
 
 FIFO<AP_MAX_BUF_LEN> apInputBuffer;
 FIFO<AP_MAX_BUF_LEN> apOutputBuffer;
 
-// #define UART_INPUT_BUF_LEN 1024
-// FIFO<UART_INPUT_BUF_LEN> uartInputBuffer;
+#define UART_INPUT_BUF_LEN 1024
+FIFO<UART_INPUT_BUF_LEN> uartInputBuffer;
 
-// // Buffer for current stubbon sender packet (mavlink only)
-// uint8_t mavlinkSSBuffer[CRSF_MAX_PACKET_LEN]; 
+// Buffer for current stubbon sender packet (mavlink only)
+uint8_t mavlinkSSBuffer[CRSF_MAX_PACKET_LEN]; 
 
-// bool NextPacketIsMspData = false;  
+bool NextPacketIsMspData = false;  
 
-// #define syncSpamAmount 3
-// #define syncSpamAmountAfterRateChange 10
-// volatile uint8_t syncSpamCounter = 0;
-// volatile uint8_t syncSpamCounterAfterRateChange = 0;
-// uint32_t rfModeLastChangedMS = 0;
-// uint32_t SyncPacketLastSent = 0;
+#define syncSpamAmount 3
+#define syncSpamAmountAfterRateChange 10
+volatile uint8_t syncSpamCounter = 0;
+volatile uint8_t syncSpamCounterAfterRateChange = 0;
+uint32_t rfModeLastChangedMS = 0;
+uint32_t SyncPacketLastSent = 0;
 
 
-// volatile uint32_t LastTLMpacketRecvMillis = 0;
-// uint32_t TLMpacketReported = 0;
-// static bool commitInProgress = false;
+volatile uint32_t LastTLMpacketRecvMillis = 0;
+uint32_t TLMpacketReported = 0;
+static bool commitInProgress = false;
 
-// LQCALC<25> LQCalc;
+LQCALC<25> LQCalc;
 
-// // volatile bool busyTransmitting;
-// static volatile bool ModelUpdatePending;
+// volatile bool busyTransmitting;
+static volatile bool ModelUpdatePending;
 
 uint8_t MSPDataPackage[5];
 #define BindingSpamAmount 25
 static uint8_t BindingSendCount;
-// bool RxWiFiReadyToSend = false;
+bool RxWiFiReadyToSend = false;
 
-// bool headTrackingEnabled = false;
-// #if !defined(CRITICAL_FLASH)
-// static uint16_t ptrChannelData[3] = {CRSF_CHANNEL_VALUE_MID, CRSF_CHANNEL_VALUE_MID, CRSF_CHANNEL_VALUE_MID};
-// static uint32_t lastPTRValidTimeMs;
-// #endif
+bool headTrackingEnabled = false;
+#if !defined(CRITICAL_FLASH)
+static uint16_t ptrChannelData[3] = {CRSF_CHANNEL_VALUE_MID, CRSF_CHANNEL_VALUE_MID, CRSF_CHANNEL_VALUE_MID};
+static uint32_t lastPTRValidTimeMs;
+#endif
 
 static TxTlmRcvPhase_e TelemetryRcvPhase = ttrpTransmitting;
-// StubbornReceiver TelemetryReceiver;
-// StubbornSender MspSender;
-// uint8_t CRSFinBuffer[CRSF_MAX_PACKET_LEN+1];
+StubbornReceiver TelemetryReceiver;
+StubbornSender MspSender;
+uint8_t CRSFinBuffer[CRSF_MAX_PACKET_LEN+1];
 
 /* User variable */
 
@@ -115,7 +103,8 @@ static TxTlmRcvPhase_e TelemetryRcvPhase = ttrpTransmitting;
 Adafruit_SSD1306 display(OLED_RESET);
 
 #define AIRRATE RATE_LORA_333HZ_8CH
-#define BUADRATE 14400
+#define BUADRATE 9600
+
 
 uint16_t fullScount;
 uint16_t fullSfreq;
@@ -141,22 +130,22 @@ bool ICACHE_RAM_ATTR ProcessTLMpacket(SX12xxDriverCommon::rx_status const status
 {
   if (status != SX12xxDriverCommon::SX12XX_RX_OK)
   {
-    Serial.println("TLM HW CRC error");
+    // Serial.println("TLM HW CRC error");
     // DBGLN("TLM HW CRC error");
     return false;
   }
 
   OTA_Packet_s * const otaPktPtr = (OTA_Packet_s * const)Radio.RXdataBuffer;
   if (!OtaValidatePacketCrc(otaPktPtr))
-  {
-    Serial.println("TLM crc error");
+  {    
+    // Serial.println("TLM crc error");
     // DBGLN("TLM crc error");
     return false;
   }
 
   if (otaPktPtr->std.type != PACKET_TYPE_TLM)
-  {
-    Serial.println("TLM type error " + String(otaPktPtr->std.type));
+  {    
+    // Serial.println("TLM type error " + String(otaPktPtr->std.type));
     // DBGLN("TLM type error %d", otaPktPtr->std.type);
     return false;
   }
@@ -271,7 +260,6 @@ void SetRFLinkRate(uint8_t index) // ELRS移植，注释源码另起修改
     // && (OtaSwitchModeCurrent == newSwitchMode)
     )
     return;
-
     Serial.println("set rate " + String(index));
     // DBGLN("set rate %u", index);
     uint32_t interval = ModParams->interval;
@@ -534,20 +522,18 @@ void ICACHE_RAM_ATTR SendRCdataToRF() // ELRS移植，注释源码另起修改
 
 static void HandleUARTin()
 {
-    if(serialBufferSize = Serial.available())
-    // if(Serial.available())
-    { 
-        auto size = std::min(apInputBuffer.free(), (uint16_t)Serial.available());
-        if (size > 0)
-        {
-            uint8_t buf[size];
-            Serial.readBytes(buf, size);
-            apInputBuffer.lock();
-            apInputBuffer.pushBytes(buf, size);
-            apInputBuffer.unlock();
-            digitalToggle(PC13);
-        }
+  if(Serial.available())
+  { 
+    auto size = std::min(apInputBuffer.free(), (uint16_t)Serial.available());
+    if (size > 0)
+    {
+      uint8_t buf[size];
+      Serial.readBytes(buf, size);
+      apInputBuffer.lock();
+      apInputBuffer.pushBytes(buf, size);
+      apInputBuffer.unlock();
     }
+  }
 }
 
 static void HandleUARTout()
@@ -568,6 +554,8 @@ static void HandleUARTout()
 
 void ICACHE_RAM_ATTR HWtimerCallbackTock() // ELRS移植，注释源码另起修改
 {
+
+
   static uint16_t tockcount = 0;
   tockcount++;
   if (tockcount >= (1000000 / ExpressLRS_currAirRate_Modparams->interval))
@@ -716,7 +704,6 @@ static void EnterBindingMode() // ELRS移植，注释源码另起修改
 
     // Start transmitting again
     hwTimer::resume();
-
     Serial.println("Entered binding mode at freq = " + String(Radio.currFreq));
 //   DBGLN("Entered binding mode at freq = %d", Radio.currFreq);
 }
@@ -738,7 +725,6 @@ static void ExitBindingMode() // ELRS移植，注释源码另起修改
   //return to original rate
   SetRFLinkRate(enumRatetoIndex(AIRRATE));
   // SetRFLinkRate(config.GetRate()); 
-
   Serial.println("Exiting binding mode");
   // DBGLN("Exiting binding mode");
 }
@@ -902,11 +888,8 @@ void setup() // 保留Stubborn模块注释
 void loop()
 {
   // uint32_t now = millis();
-
   HandleUARTout();
-  
   HandleUARTin();
-
   // // only send msp data when binding is not active
   // static bool mspTransferActive = false;
   if (InBindingMode)
