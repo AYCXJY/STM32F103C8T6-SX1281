@@ -415,7 +415,7 @@ void ICACHE_RAM_ATTR SendRCdataToRF() // ELRS移植，注释源码另起修改
   }
   else
   {
-    // if ((NextPacketIsMspData && MspSender.IsActive())/* || dontSendChannelData*/)
+    // if ((NextPacketIsMspData && MspSender.IsActive()) || dontSendChannelData)
     {
       otaPkt.std.type = PACKET_TYPE_MSPDATA;
       if (OtaIsFullRes)
@@ -888,14 +888,28 @@ void setup() // 保留Stubborn模块注释
 void loop()
 {
   // uint32_t now = millis();
+
   HandleUARTout();
+
   HandleUARTin();
-  // // only send msp data when binding is not active
-  // static bool mspTransferActive = false;
+
+  if(fullRfreq > 130)
+  {
+    digitalWrite(PC13, LOW);
+  }
+  else
+  {
+    digitalWrite(PC13, HIGH);
+  }
+
+  // only send msp data when binding is not active
+  static bool mspTransferActive = false;
+
   if (InBindingMode)
   {
     // exit bind mode if package after some repeats
-    if (BindingSendCount > BindingSpamAmount) {
+    if (BindingSendCount > BindingSpamAmount) 
+    {
       ExitBindingMode();
     }
   }
