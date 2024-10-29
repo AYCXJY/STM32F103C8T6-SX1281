@@ -134,10 +134,10 @@ uint16_t fullScount;
 uint16_t fullSfreq;
 uint16_t fullRcount;
 uint16_t fullRfreq;
-uint16_t sendcount;
-uint16_t sendfreq;
-uint16_t receivecount;
-uint16_t receivefreq;
+uint16_t validSendCount;
+uint16_t validSendFreq;
+uint16_t validReceiveCount;
+uint16_t validReceiveFreq;
 
 uint8_t CRCvalue;
 
@@ -348,7 +348,7 @@ bool ICACHE_RAM_ATTR HandleSendTelemetryResponse() // ELRS移植，注释源码�
         if(apInputBuffer.size())
         // else if (firmwareOptions.is_airport)
         {
-            sendcount++;
+            validSendCount++;
             OtaPackAirportData(&otaPkt, &apInputBuffer);
         }
     }
@@ -813,9 +813,6 @@ static bool ICACHE_RAM_ATTR ProcessRfPacket_SYNC(uint32_t const now, OTA_Sync_s 
         OtaNonce = otaSync->nonce;
         // TentativeConnection(now);
         connectionState = connected;
-        // 点亮LED
-        digitalWrite(PC13, 0);
-        Serial.println("got connection");
         // // connectionHasModelMatch must come after TentativeConnection, which resets it
         // connectionHasModelMatch = modelMatched;
         return true;
@@ -877,7 +874,7 @@ bool ICACHE_RAM_ATTR ProcessRFPacket(SX12xxDriverCommon::rx_status const status)
     case PACKET_TYPE_TLM:
         // if (firmwareOptions.is_airport)
         {
-            receivecount++;
+            validReceiveCount++;
             OtaUnpackAirportData(otaPktPtr, &apOutputBuffer);
         }
         break;
@@ -1247,7 +1244,7 @@ void displayDebugInfo()
         display.setCursor(0, 16);
         display.println("Send");
         display.setCursor(30, 16);
-        display.println(sendfreq);
+        display.println(validSendFreq);
         // full Send freq
         display.setCursor(54, 16);
         display.println("FullS");
@@ -1257,7 +1254,7 @@ void displayDebugInfo()
         display.setCursor(0, 24);
         display.println("Recv");
         display.setCursor(30, 24);
-        display.println(receivefreq);  
+        display.println(validReceiveFreq);  
         // full Recv freq
         display.setCursor(54, 24);
         display.println("FullR");
@@ -1301,10 +1298,10 @@ void handleButtonPress()
 
 void TimerHandler() 
 {  
-    sendfreq = sendcount;
-    sendcount = 0;
-    receivefreq = receivecount;
-    receivecount = 0;
+    validSendFreq = validSendCount;
+    validSendCount = 0;
+    validReceiveFreq = validReceiveCount;
+    validReceiveCount = 0;
     fullSfreq = fullScount;
     fullScount = 0;
     fullRfreq = fullRcount;
@@ -1394,17 +1391,16 @@ void loop() // ELRS移植，注释源码另起修改
     // {
     //     return;
     // }
-    if(receivefreq > 150)
+    if(fullRfreq > 130)
     {
+        digitalWrite(PC13, LOW);
+        connectionState = connected;
         RXtimerState = tim_locked;
     }
-    if(connectionState != disconnected && slack / ExpressLRS_currAirRate_Modparams->interval > 5)
+    else if(connectionState != disconnected && slack / ExpressLRS_currAirRate_Modparams->interval > 5)
     {
-        // 熄灭LED
-        digitalWrite(PC13, 1);
-        Serial.println("lost connection");
+        digitalWrite(PC13, HIGH);
         connectionState = disconnected;
-
         Radio.SetFrequencyReg(FHSSgetInitialFreq());
     }
 
