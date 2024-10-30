@@ -1,14 +1,14 @@
-// 更新日期：2024年10月28日
+// 更新日期：2024年10月30日
 
 // 已实现项：
 // - 设备绑定与换绑；
-// - FHSS同步跳频通信；（健壮性差）
+// - FHSS同步跳频通信（待优化）；
 // - 可变通信速率；
-// - 简易断线重连机制；（健壮性差）
-// - 双向透传功能；
+// - 简易断线重连机制（待优化）；
+// - 双向透传功能（无重传）；
+// - 使用Stubborn实现可靠数据传输（可行，数据包最大为160字节，再大的话需要更改OTA包封装）（双向同时收发时串口繁忙造成数据丢失）；
 
 // 进行中项：
-// - 使用Stubborn实现可靠数据传输
 
 /* ELRS include */
 
@@ -66,7 +66,7 @@ static uint8_t telemetryBurstCount;
 static uint8_t telemetryBurstMax;
 
 StubbornReceiver MspReceiver;
-uint8_t MspData[ELRS_MSP_BUFFER];
+uint8_t MspData[140];
 
 // Buffer for current stubbon sender packet (mavlink only)
 uint8_t mavlinkSSBuffer[CRSF_MAX_PACKET_LEN]; 
@@ -141,7 +141,7 @@ uint16_t validReceiveFreq;
 
 uint8_t CRCvalue;
 
-#define TIMER_INTERVAL_MS 1000000
+#define TIMER_INTERVAL_MS 100000
 STM32Timer ITimer(TIM2);
 
 bool UIDIsModified = false;
@@ -153,6 +153,8 @@ uint32_t slack;
 
 FIFO<AP_MAX_BUF_LEN> apInputBuffer;
 FIFO<AP_MAX_BUF_LEN> apOutputBuffer;
+
+uint8_t StubbornSenderBuffer[140];
 
 /* ELRS Function*/
 
@@ -218,8 +220,8 @@ void SetRFLinkRate(uint8_t index, bool bindMode) // ELRS移植，注释源码另
     // }
 
     OtaUpdateSerializers(smWideOr8ch, ModParams->PayloadLength);
-    // MspReceiver.setMaxPackageIndex(ELRS_MSP_MAX_PACKAGES);
-    // TelemetrySender.setMaxPackageIndex(OtaIsFullRes ? ELRS8_TELEMETRY_MAX_PACKAGES : ELRS4_TELEMETRY_MAX_PACKAGES);
+    MspReceiver.setMaxPackageIndex(ELRS_MSP_MAX_PACKAGES);
+    TelemetrySender.setMaxPackageIndex(OtaIsFullRes ? ELRS8_TELEMETRY_MAX_PACKAGES : ELRS4_TELEMETRY_MAX_PACKAGES);
 
     // // Wait for (11/10) 110% of time it takes to cycle through all freqs in FHSS table (in ms)
     // cycleInterval = ((uint32_t)11U * FHSSgetChannelCount() * ModParams->FHSShopInterval * interval) / (10U * 1000U);
@@ -275,6 +277,31 @@ bool ICACHE_RAM_ATTR HandleFHSS() // ELRS移植，注释源码另起修改
     return true;
 }
 
+void ICACHE_RAM_ATTR LinkStatsToOta(OTA_LinkStats_s * const ls)
+{
+    // The value in linkstatistics is "positivized" (inverted polarity)
+    // and must be inverted on the TX side. Positive values are used
+    // so save a bit to encode which antenna is in use
+    // ls->uplink_RSSI_1 = CRSF::LinkStatistics.uplink_RSSI_1;
+    // ls->uplink_RSSI_2 = CRSF::LinkStatistics.uplink_RSSI_2;
+    // ls->antenna = antenna;
+    // ls->modelMatch = connectionHasModelMatch;
+    // ls->lq = CRSF::LinkStatistics.uplink_Link_quality;
+    ls->mspConfirm = MspReceiver.GetCurrentConfirm() ? 1 : 0;
+// #if defined(DEBUG_FREQ_CORRECTION)
+//     ls->SNR = FreqCorrection * 127 / FreqCorrectionMax;
+// #else
+//     if (SnrMean.getCount())
+//     {
+//         ls->SNR = SnrMean.mean();
+//     }
+//     else
+//     {
+//         ls->SNR = SnrMean.previousMean();
+//     }
+// #endif
+}
+
 bool ICACHE_RAM_ATTR HandleSendTelemetryResponse() // ELRS移植，注释源码另起修改
 {
     uint8_t modresult = (OtaNonce + 1) % ExpressLRS_currTlmDenom;
@@ -294,30 +321,30 @@ bool ICACHE_RAM_ATTR HandleSendTelemetryResponse() // ELRS移植，注释源码�
     // bool noTlmQueued = !TelemetrySender.IsActive() && noAirportDataQueued;
 
     // if (NextTelemetryType == ELRS_TELEMETRY_TYPE_LINK || noTlmQueued)
-    // {
-    //     OTA_LinkStats_s * ls;
-    //     if (OtaIsFullRes)
-    //     {
-    //         otaPkt.full.tlm_dl.containsLinkStats = 1;
-    //         ls = &otaPkt.full.tlm_dl.ul_link_stats.stats;
-    //         // Include some advanced telemetry in the extra space
-    //         // Note the use of `ul_link_stats.payload` vs just `payload`
-    //         otaPkt.full.tlm_dl.packageIndex = TelemetrySender.GetCurrentPayload(
-    //             otaPkt.full.tlm_dl.ul_link_stats.payload,
-    //             sizeof(otaPkt.full.tlm_dl.ul_link_stats.payload));
-    //     }
-    //     else
-    //     {
-    //         otaPkt.std.tlm_dl.type = ELRS_TELEMETRY_TYPE_LINK;
-    //         ls = &otaPkt.std.tlm_dl.ul_link_stats.stats;
-    //     }
-    //     LinkStatsToOta(ls);
+    {
+        OTA_LinkStats_s * ls;
+        if (OtaIsFullRes)
+        {
+            otaPkt.full.tlm_dl.containsLinkStats = 1;
+            ls = &otaPkt.full.tlm_dl.ul_link_stats.stats;
+            // // Include some advanced telemetry in the extra space
+            // // Note the use of `ul_link_stats.payload` vs just `payload`
+            otaPkt.full.tlm_dl.packageIndex = TelemetrySender.GetCurrentPayload(
+                otaPkt.full.tlm_dl.ul_link_stats.payload,
+                sizeof(otaPkt.full.tlm_dl.ul_link_stats.payload));
+        }
+        else
+        {
+            otaPkt.std.tlm_dl.type = ELRS_TELEMETRY_TYPE_LINK;
+            ls = &otaPkt.std.tlm_dl.ul_link_stats.stats;
+        }
+        LinkStatsToOta(ls);
 
-    //     NextTelemetryType = ELRS_TELEMETRY_TYPE_DATA;
-    //     // Start the count at 1 because the next will be DATA and doing +1 before checking
-    //     // against Max below is for some reason 10 bytes more code
-    //     telemetryBurstCount = 1;
-    // }
+        // NextTelemetryType = ELRS_TELEMETRY_TYPE_DATA;
+        // // Start the count at 1 because the next will be DATA and doing +1 before checking
+        // // against Max below is for some reason 10 bytes more code
+        // telemetryBurstCount = 1;
+    }
     // else
     {
         // if (telemetryBurstCount < telemetryBurstMax)
@@ -345,12 +372,12 @@ bool ICACHE_RAM_ATTR HandleSendTelemetryResponse() // ELRS移植，注释源码�
         //             sizeof(otaPkt.std.tlm_dl.payload));
         //     }
         // }
-        if(apInputBuffer.size())
-        // else if (firmwareOptions.is_airport)
-        {
-            validSendCount++;
-            OtaPackAirportData(&otaPkt, &apInputBuffer);
-        }
+        // if(apInputBuffer.size())
+        // // else if (firmwareOptions.is_airport)
+        // {
+        //     validSendCount++;
+        //     OtaPackAirportData(&otaPkt, &apInputBuffer);
+        // }
     }
 
     OtaGeneratePacketCrc(&otaPkt);
@@ -404,7 +431,7 @@ int32_t ICACHE_RAM_ATTR HandleFreqCorr(bool value) // ELRS移植，注释源码�
             tempFC--; // FREQ_STEP units
             if (tempFC == FreqCorrectionMin)
             {
-                Serial.println("Max -FreqCorrection reached!");
+                // Serial.println("Max -FreqCorrection reached!");
                 // DBGLN("Max -FreqCorrection reached!");
             }
         }
@@ -416,7 +443,7 @@ int32_t ICACHE_RAM_ATTR HandleFreqCorr(bool value) // ELRS移植，注释源码�
             tempFC++; // FREQ_STEP units
             if (tempFC == FreqCorrectionMax)
             {
-                Serial.println("Max +FreqCorrection reached!");
+                // Serial.println("Max +FreqCorrection reached!");
                 // DBGLN("Max +FreqCorrection reached!");
             }
         }
@@ -715,7 +742,7 @@ static void ICACHE_RAM_ATTR ProcessRfPacket_MSP(OTA_Packet_s const * const otaPk
         dataLen = sizeof(otaPktPtr->full.msp_ul.payload);
         // if (config.GetSerialProtocol() == PROTOCOL_MAVLINK)
         // {
-        //     TelemetrySender.ConfirmCurrentPayload(otaPktPtr->full.msp_ul.tlmFlag);
+            TelemetrySender.ConfirmCurrentPayload(otaPktPtr->full.msp_ul.tlmFlag);
         // }
         // else
         {
@@ -753,13 +780,13 @@ static void ICACHE_RAM_ATTR ProcessRfPacket_MSP(OTA_Packet_s const * const otaPk
         return;
     }
 
-    // // Must be fully connected to process MSP, prevents processing MSP
-    // // during sync, where packets can be received before connection
-    // if (connectionState != connected)
-    //     return;
+    // Must be fully connected to process MSP, prevents processing MSP
+    // during sync, where packets can be received before connection
+    if (connectionState != connected)
+        return;
 
-    // bool currentMspConfirmValue = MspReceiver.GetCurrentConfirm();
-    // MspReceiver.ReceiveData(packageIndex, payload, dataLen);
+    bool currentMspConfirmValue = MspReceiver.GetCurrentConfirm();
+    MspReceiver.ReceiveData(packageIndex, payload, dataLen);
     // if (currentMspConfirmValue != MspReceiver.GetCurrentConfirm())
     // {
     //     NextTelemetryType = ELRS_TELEMETRY_TYPE_LINK;
@@ -825,7 +852,7 @@ bool ICACHE_RAM_ATTR ProcessRFPacket(SX12xxDriverCommon::rx_status const status)
 {
     if (status != SX12xxDriverCommon::SX12XX_RX_OK)
     {
-        Serial.println("HW CRC error");
+        // Serial.println("HW CRC error");
         // DBGVLN("HW CRC error");
         #if defined(DEBUG_RX_SCOREBOARD)
             lastPacketCrcError = true;
@@ -843,7 +870,7 @@ bool ICACHE_RAM_ATTR ProcessRFPacket(SX12xxDriverCommon::rx_status const status)
 
     if (!OtaValidatePacketCrc(otaPktPtr))
     {
-        Serial.println("CRC error");
+        // Serial.println("CRC error");
         // DBGVLN("CRC error");
         #if defined(DEBUG_RX_SCOREBOARD)
             lastPacketCrcError = true;
@@ -873,10 +900,10 @@ bool ICACHE_RAM_ATTR ProcessRFPacket(SX12xxDriverCommon::rx_status const status)
         break;
     case PACKET_TYPE_TLM:
         // if (firmwareOptions.is_airport)
-        {
-            validReceiveCount++;
-            OtaUnpackAirportData(otaPktPtr, &apOutputBuffer);
-        }
+        // {
+        //     validReceiveCount++;
+        //     OtaUnpackAirportData(otaPktPtr, &apOutputBuffer);
+        // }
         break;
     default:
         break;
@@ -1042,9 +1069,6 @@ static void EnterBindingMode() // ELRS移植，注释源码另起修改
         return;
     }
 
-    // 点亮LED
-    digitalWrite(PC13, 0);
-
     // Binding uses a CRCInit=0, 50Hz, and InvertIQ
     OtaCrcInitializer = 0;
     InBindingMode = true;
@@ -1075,10 +1099,7 @@ static void ExitBindingMode() // ELRS移植，注释源码另起修改
         return;
     }
 
-    // 熄灭LED
-    digitalWrite(PC13, 1);
-
-    // MspReceiver.ResetState();
+    MspReceiver.ResetState();
 
     // Prevent any new packets from coming in
     Radio.SetTxIdleMode();
@@ -1100,6 +1121,7 @@ static void ExitBindingMode() // ELRS移植，注释源码另起修改
     // RFmodeLastCycled = 0;
     // LockRFmode = false;
     // LostConnection(false);
+    connectionState = disconnected;
 
     // Do this last as LostConnection() will wait for a tock that never comes
     // if we're in binding mode
@@ -1160,27 +1182,28 @@ static void updateBindingMode(unsigned long now) // ELRS移植，注释源码另
         // DBGLN("Connected request to enter binding mode");
         Serial.println("Connected request to enter binding mode");
         BindingModeRequest = false;
-        // if (connectionState == connected)
-        // {
-        //     LostConnection(false);
-        //     // Skip entering bind mode if on loan. This comes from an OTA request
-        //     // and the model is assumed to be inaccessible, do not want the receiver
-        //     // sitting in a field ready to be bound to anyone within 10km
-        //     if (config.IsOnLoan())
-        //     {
-        //         DBGLN("Model was on loan, becoming inert");
-        //         config.ReturnLoan();
-        //         config.Commit(); // prevents CheckConfigChangePending() re-enabling radio
-        //         Radio.End();
-        //         // Enter a completely invalid state for a receiver, to prevent wifi or radio enabling
-        //         connectionState = noCrossfire;
-        //         return;
-        //     }
-        //     // if the InitRate config item was changed by LostConnection
-        //     // save the config before entering bind, as the modified config
-        //     // will immediately boot it out of bind mode
-        //     config.Commit();
-        // }
+        if (connectionState == connected)
+        {
+            connectionState = disconnected;
+            // LostConnection(false);
+            // Skip entering bind mode if on loan. This comes from an OTA request
+            // and the model is assumed to be inaccessible, do not want the receiver
+            // sitting in a field ready to be bound to anyone within 10km
+            // if (config.IsOnLoan())
+            // {
+            //     DBGLN("Model was on loan, becoming inert");
+            //     config.ReturnLoan();
+            //     config.Commit(); // prevents CheckConfigChangePending() re-enabling radio
+            //     Radio.End();
+            //     // Enter a completely invalid state for a receiver, to prevent wifi or radio enabling
+            //     connectionState = noCrossfire;
+            //     return;
+            // }
+            // // if the InitRate config item was changed by LostConnection
+            // // save the config before entering bind, as the modified config
+            // // will immediately boot it out of bind mode
+            // config.Commit();
+        }
         EnterBindingMode();
     }
 }
@@ -1298,14 +1321,23 @@ void handleButtonPress()
 
 void TimerHandler() 
 {  
-    validSendFreq = validSendCount;
-    validSendCount = 0;
-    validReceiveFreq = validReceiveCount;
-    validReceiveCount = 0;
-    fullSfreq = fullScount;
-    fullScount = 0;
-    fullRfreq = fullRcount;
-    fullRcount = 0;
+    static uint16_t timercount = 0;
+    if(timercount % (1000000 / TIMER_INTERVAL_MS) == 0)
+    {
+        validSendFreq = validSendCount;
+        validSendCount = 0;
+        validReceiveFreq = validReceiveCount;
+        validReceiveCount = 0;
+        fullSfreq = fullScount;
+        fullScount = 0;
+        fullRfreq = fullRcount;
+        fullRcount = 0;
+    }
+    if(connectionState == disconnected || InBindingMode)
+    {
+        digitalToggle(PC13);
+    }
+    timercount++;
 }
 
 void setupBasicHardWare()
@@ -1349,6 +1381,7 @@ void setup()
 
     if (connectionState != radioFailed)
     {
+        MspReceiver.SetDataToReceive(MspData, 140);
         // MspReceiver.SetDataToReceive(MspData, ELRS_MSP_BUFFER);
         Radio.RXnb();
         hwTimer::init(HWtimerCallbackTick, HWtimerCallbackTock);
@@ -1368,11 +1401,24 @@ void loop() // ELRS移植，注释源码另起修改
     HandleUARTout();
     unsigned long now = millis();
 
-    // if (MspReceiver.HasFinishedData())
-    // {
-    //     MspReceiveComplete();
-    // }
-
+    if (MspReceiver.HasFinishedData())
+    {
+        apOutputBuffer.lock();
+        apOutputBuffer.atomicPushBytes(MspData, 140);
+        apOutputBuffer.unlock();
+        MspReceiver.Unlock();
+    }
+    if (!TelemetrySender.IsActive())
+    {
+        auto size = apInputBuffer.size();
+        if (size >= 140)
+        {
+            apInputBuffer.lock();
+            apInputBuffer.popBytes(StubbornSenderBuffer, 140);
+            apInputBuffer.unlock();
+            TelemetrySender.SetDataToTransmit(StubbornSenderBuffer, 140);
+        }
+    }
     // devicesUpdate(now);
 
     // // read and process any data from serial ports, send any queued non-RC data
@@ -1399,7 +1445,6 @@ void loop() // ELRS移植，注释源码另起修改
     }
     else if(connectionState != disconnected && slack / ExpressLRS_currAirRate_Modparams->interval > 5)
     {
-        digitalWrite(PC13, HIGH);
         connectionState = disconnected;
         Radio.SetFrequencyReg(FHSSgetInitialFreq());
     }

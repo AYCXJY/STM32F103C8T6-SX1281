@@ -1,16 +1,14 @@
-// 更新日期：2024年10月29日
+// 更新日期：2024年10月30日
 
 // 已实现项：
 // - 设备绑定与换绑；
-// - FHSS同步跳频通信；
+// - FHSS同步跳频通信（待优化）；
 // - 可变通信速率；
-// - 简易断线重连机制；
-// - 双向透传功能；
+// - 简易断线重连机制（待优化）；
+// - 双向透传功能（无重传）；
+// - 使用Stubborn实现可靠数据传输（可行，数据包最大为160字节，再大的话需要更改OTA包封装）（双向同时收发时串口繁忙造成数据丢失）；
 
 // 进行中项：
-// - 使用Stubborn实现可靠数据传输
-//   - 禁用AirPort，使用MSP <-> TLM 常规链路发送
-//     
 
 /* ELRS include */
 
@@ -107,7 +105,6 @@ Adafruit_SSD1306 display(OLED_RESET);
 #define AIRRATE RATE_LORA_333HZ_8CH
 #define BUADRATE 9600
 
-
 uint16_t fullScount;
 uint16_t fullSfreq;
 uint16_t fullRcount;
@@ -117,22 +114,41 @@ uint16_t validSendFreq;
 uint16_t validReceiveCount;
 uint16_t validReceiveFreq;
 
-uint8_t serialBufferSize;
-uint8_t apInputBufferSize;
-uint8_t apOutputBufferSize;
-
-#define TIMER_INTERVAL_MS 1000000
+#define TIMER_INTERVAL_MS 100000
 STM32Timer ITimer(TIM2);
 
 uint8_t CRCvalue;
 
-bool telemetryConfirmExpectedValue = true;
-WORD_ALIGNED_ATTR OTA_Packet_s lastOtaPkt;
-bool Resend;
-
-bool telemetryConfirmValue = false;
+uint8_t StubbornSenderBuffer[140];
+uint8_t StubbornReceiverBuffer[140];
 
 /* ELRS Function*/
+
+void ICACHE_RAM_ATTR LinkStatsFromOta(OTA_LinkStats_s * const ls) // ELRS移植，注释源码另起修改
+{
+  // int8_t snrScaled = ls->SNR;
+  // DynamicPower_TelemetryUpdate(snrScaled);
+  //
+  // // Antenna is the high bit in the RSSI_1 value
+  // // RSSI received is signed, inverted polarity (positive value = -dBm)
+  // // OpenTX's value is signed and will display +dBm and -dBm properly
+  // CRSF::LinkStatistics.uplink_RSSI_1 = -(ls->uplink_RSSI_1);
+  // CRSF::LinkStatistics.uplink_RSSI_2 = -(ls->uplink_RSSI_2);
+  // CRSF::LinkStatistics.uplink_Link_quality = ls->lq;
+// #if defined(DEBUG_FREQ_CORRECTION)
+//   // Don't descale the FreqCorrection value being send in SNR
+//   CRSF::LinkStatistics.uplink_SNR = snrScaled;
+// #else
+//   CRSF::LinkStatistics.uplink_SNR = SNR_DESCALE(snrScaled);
+// #endif
+  // CRSF::LinkStatistics.active_antenna = ls->antenna;
+  // connectionHasModelMatch = ls->modelMatch;
+  // -- downlink_SNR / downlink_RSSI is updated for any packet received, not just Linkstats
+  // -- uplink_TX_Power is updated when sending to the handset, so it updates when missing telemetry
+  // -- rf_mode is updated when we change rates
+  // -- downlink_Link_quality is updated before the LQ period is incremented
+  MspSender.ConfirmCurrentPayload(ls->mspConfirm);
+}
 
 bool ICACHE_RAM_ATTR ProcessTLMpacket(SX12xxDriverCommon::rx_status const status) // ELRS移植，注释源码另起修改
 {
@@ -160,7 +176,7 @@ bool ICACHE_RAM_ATTR ProcessTLMpacket(SX12xxDriverCommon::rx_status const status
 
   // LastTLMpacketRecvMillis = millis();
   // LQCalc.add();
-
+  //
   // Radio.GetLastPacketStats();
   // CRSF::LinkStatistics.downlink_SNR = SNR_DESCALE(Radio.LastPacketSNRRaw);
   // CRSF::LinkStatistics.downlink_RSSI_1 = Radio.LastPacketRSSI;
@@ -169,38 +185,29 @@ bool ICACHE_RAM_ATTR ProcessTLMpacket(SX12xxDriverCommon::rx_status const status
   // Full res mode
   if (OtaIsFullRes)
   {
-    // OTA_Packet8_s * const ota8 = (OTA_Packet8_s * const)otaPktPtr;
-    // uint8_t *telemPtr;
-    // uint8_t dataLen;
-    // if (ota8->tlm_dl.containsLinkStats)
-    // {
-    //   LinkStatsFromOta(&ota8->tlm_dl.ul_link_stats.stats);
-    //   telemPtr = ota8->tlm_dl.ul_link_stats.payload;
-    //   dataLen = sizeof(ota8->tlm_dl.ul_link_stats.payload);
-    // }
-    // else
+    OTA_Packet8_s * const ota8 = (OTA_Packet8_s * const)otaPktPtr;
+    uint8_t *telemPtr;
+    uint8_t dataLen;
+    if (ota8->tlm_dl.containsLinkStats)
     {
-      if(otaPktPtr->full.airport.count)
-      // if (firmwareOptions.is_airport)
-      {
-        if(otaPktPtr->full.airport.containsLinkStats == telemetryConfirmExpectedValue)
-        {
-          validReceiveCount++;
-          OtaUnpackAirportData(otaPktPtr, &apOutputBuffer);
-          telemetryConfirmExpectedValue = !telemetryConfirmExpectedValue;
-          return true;
-        }
-        else 
-        {
-          Resend = true;
-        }
-
-      }
-      // telemPtr = ota8->tlm_dl.payload;
-      // dataLen = sizeof(ota8->tlm_dl.payload);
+      LinkStatsFromOta(&ota8->tlm_dl.ul_link_stats.stats);
+      telemPtr = ota8->tlm_dl.ul_link_stats.payload;
+      dataLen = sizeof(ota8->tlm_dl.ul_link_stats.payload);
+    }
+    else
+    {
+      // if(otaPktPtr->full.airport.count)
+      // // if (firmwareOptions.is_airport)
+      // {
+      //   validReceiveCount++;
+      //   OtaUnpackAirportData(otaPktPtr, &apOutputBuffer);
+      //   return true;
+      // }
+      telemPtr = ota8->tlm_dl.payload;
+      dataLen = sizeof(ota8->tlm_dl.payload);
     }
     // //DBGLN("pi=%u len=%u", ota8->tlm_dl.packageIndex, dataLen);
-    // TelemetryReceiver.ReceiveData(ota8->tlm_dl.packageIndex & ELRS8_TELEMETRY_MAX_PACKAGES, telemPtr, dataLen);
+    TelemetryReceiver.ReceiveData(ota8->tlm_dl.packageIndex & ELRS8_TELEMETRY_MAX_PACKAGES, telemPtr, dataLen);
   }
   // Std res mode
   else
@@ -322,8 +329,8 @@ void SetRFLinkRate(uint8_t index) // ELRS移植，注释源码另起修改
 
     OtaUpdateSerializers(smWideOr8ch, ModParams->PayloadLength);
     // OtaUpdateSerializers(newSwitchMode, ModParams->PayloadLength);
-    // MspSender.setMaxPackageIndex(ELRS_MSP_MAX_PACKAGES);
-    // TelemetryReceiver.setMaxPackageIndex(OtaIsFullRes ? ELRS8_TELEMETRY_MAX_PACKAGES : ELRS4_TELEMETRY_MAX_PACKAGES);
+    MspSender.setMaxPackageIndex(ELRS_MSP_MAX_PACKAGES);
+    TelemetryReceiver.setMaxPackageIndex(OtaIsFullRes ? ELRS8_TELEMETRY_MAX_PACKAGES : ELRS4_TELEMETRY_MAX_PACKAGES);
 
     ExpressLRS_currAirRate_Modparams = ModParams;
     ExpressLRS_currAirRate_RFperfParams = RFperf;
@@ -426,53 +433,25 @@ void ICACHE_RAM_ATTR SendRCdataToRF() // ELRS移植，注释源码另起修改
   //   GenerateSyncPacketData(OtaIsFullRes ? &otaPkt.full.sync.sync : &otaPkt.std.sync);
   //   syncSlot = (syncSlot + 1) % (ExpressLRS_currAirRate_Modparams->FHSShopInterval * 2);
   // }
-  else if(!Resend && apInputBuffer.size())
-  {
-    OtaPackAirportData(&otaPkt, &apInputBuffer);
-    lastOtaPkt = otaPkt;
-    validSendCount++;
-  }
-  else if(Resend)
-  {
-    otaPkt = lastOtaPkt;
-    Resend = false;
-  }
   else
   {
+    if (MspSender.IsActive())
     // if ((NextPacketIsMspData && MspSender.IsActive()) || dontSendChannelData)
     {
       otaPkt.std.type = PACKET_TYPE_MSPDATA;
       if (OtaIsFullRes)
       {
-        otaPkt.full.msp_ul.packageIndex = 1;
-        if (InBindingMode)
-        {
-          memcpy(&otaPkt.full.msp_ul.payload[0], MSPDataPackage, 5);
-        }
-        else
-        {
-          // memcpy(&otaPkt.full.msp_ul.payload[0], "HELLO", 5);
-        }
-        // otaPkt.full.msp_ul.packageIndex = MspSender.GetCurrentPayload(
-        //   otaPkt.full.msp_ul.payload,
-        //   sizeof(otaPkt.full.msp_ul.payload));
+        otaPkt.full.msp_ul.packageIndex = MspSender.GetCurrentPayload(
+          otaPkt.full.msp_ul.payload,
+          sizeof(otaPkt.full.msp_ul.payload));
         // if (config.GetLinkMode() == TX_MAVLINK_MODE)
-        //   otaPkt.full.msp_ul.tlmFlag = TelemetryReceiver.GetCurrentConfirm();
+          otaPkt.full.msp_ul.tlmFlag = TelemetryReceiver.GetCurrentConfirm();
       }
       else
       {
-        otaPkt.std.msp_ul.packageIndex = 1;
-        if (InBindingMode)
-        {
-          memcpy(&otaPkt.std.msp_ul.payload[0], MSPDataPackage, 5);
-        }
-        else
-        {
-          // memcpy(&otaPkt.std.msp_ul.payload[0], "HELLO", 5);
-        }
-        // otaPkt.std.msp_ul.packageIndex = MspSender.GetCurrentPayload(
-        //   otaPkt.std.msp_ul.payload,
-        //   sizeof(otaPkt.std.msp_ul.payload));
+        otaPkt.std.msp_ul.packageIndex = MspSender.GetCurrentPayload(
+          otaPkt.std.msp_ul.payload,
+          sizeof(otaPkt.std.msp_ul.payload));
         // if (config.GetLinkMode() == TX_MAVLINK_MODE)
         //   otaPkt.std.msp_ul.tlmFlag = TelemetryReceiver.GetCurrentConfirm();
       }
@@ -486,14 +465,15 @@ void ICACHE_RAM_ATTR SendRCdataToRF() // ELRS移植，注释源码另起修改
       // if (ExpressLRS_currTlmDenom != 2)
       //   syncSpamCounter = 1;
     }
-    // else
-    // {
-    //   // always enable msp after a channel package since the slot is only used if MspSender has data to send
-    //   NextPacketIsMspData = true;
-
-    //   injectBackpackPanTiltRollData(now);
-    //   OtaPackChannelData(&otaPkt, ChannelData, TelemetryReceiver.GetCurrentConfirm(), ExpressLRS_currTlmDenom);
-    // }
+    else
+    {
+      // // always enable msp after a channel package since the slot is only used if MspSender has data to send
+      // NextPacketIsMspData = true;
+      otaPkt.std.type = PACKET_TYPE_MSPDATA;
+      otaPkt.full.msp_ul.tlmFlag = TelemetryReceiver.GetCurrentConfirm();
+      // injectBackpackPanTiltRollData(now);
+      // OtaPackChannelData(&otaPkt, ChannelData, TelemetryReceiver.GetCurrentConfirm(), ExpressLRS_currTlmDenom);
+    }
   }
 
   ///// Next, Calculate the CRC and put it into the buffer /////
@@ -578,22 +558,6 @@ static void HandleUARTout()
 
 void ICACHE_RAM_ATTR HWtimerCallbackTock() // ELRS移植，注释源码另起修改
 {
-
-
-  static uint16_t tockcount = 0;
-  tockcount++;
-  if (tockcount >= (1000000 / ExpressLRS_currAirRate_Modparams->interval))
-  {
-    tockcount = 0;
-    validSendFreq = validSendCount;
-    validSendCount = 0;
-    validReceiveFreq = validReceiveCount;
-    validReceiveCount = 0;
-    fullSfreq = fullScount;
-    fullScount = 0;
-    fullRfreq = fullRcount;
-    fullRcount = 0;
-  }
   // /* If we are busy writing to EEPROM (committing config changes) then we just advance the nonces, i.e. no SPI traffic */
   // if (commitInProgress)
   // {
@@ -698,17 +662,14 @@ void SendUIDOverMSP() // ELRS移植，注释源码另起修改
   MSPDataPackage[0] = MSP_ELRS_BIND;
   memcpy(&MSPDataPackage[1], &UID[2], 4);
   BindingSendCount = 0;
-  // MspSender.ResetState();
-  // MspSender.SetDataToTransmit(MSPDataPackage, 5);
+  MspSender.ResetState();
+  MspSender.SetDataToTransmit(MSPDataPackage, 5);
 }
 
 static void EnterBindingMode() // ELRS移植，注释源码另起修改
 {
     if (InBindingMode)
         return;
-
-    // 点亮LED
-    digitalWrite(PC13, 0);
 
     // Disable the TX timer and wait for any TX to complete
     hwTimer::stop();
@@ -737,10 +698,7 @@ static void ExitBindingMode() // ELRS移植，注释源码另起修改
   if (!InBindingMode)
     return;
 
-  // 熄灭LED
-  digitalWrite(PC13, 1);
-
-  // MspSender.ResetState();
+  MspSender.ResetState();
 
   // Reset CRCInit to UID-defined value
   OtaUpdateCrcInitFromUid();
@@ -854,7 +812,23 @@ void handleButtonPress(void)
 
 void TimerHandler()
 {
-
+    static uint16_t timercount = 0;
+    if(timercount % (1000000 / TIMER_INTERVAL_MS) == 0)
+    {
+        validSendFreq = validSendCount;
+        validSendCount = 0;
+        validReceiveFreq = validReceiveCount;
+        validReceiveCount = 0;
+        fullSfreq = fullScount;
+        fullScount = 0;
+        fullRfreq = fullRcount;
+        fullRcount = 0;
+    }
+    if(fullRfreq < 130)
+    {
+        digitalToggle(PC13);
+    }
+    timercount++;
 }
 
 void setupBasicHardWare(void)
@@ -899,6 +873,7 @@ void setup() // 保留Stubborn模块注释
 
     Radio.Begin(FHSSgetMinimumFreq(), FHSSgetMaximumFreq());
 
+    TelemetryReceiver.SetDataToReceive(StubbornReceiverBuffer, sizeof(StubbornReceiverBuffer));
     // TelemetryReceiver.SetDataToReceive(CRSFinBuffer, sizeof(CRSFinBuffer));
 
     SetRFLinkRate(enumRatetoIndex(AIRRATE));
@@ -921,14 +896,16 @@ void loop()
   {
     digitalWrite(PC13, LOW);
   }
-  else
+  // // only send msp data when binding is not active
+  // static bool mspTransferActive = false;
+
+  if (TelemetryReceiver.HasFinishedData())
   {
-    digitalWrite(PC13, HIGH);
+      apOutputBuffer.lock();
+      apOutputBuffer.atomicPushBytes(StubbornReceiverBuffer, 140);
+      apOutputBuffer.unlock();
+      TelemetryReceiver.Unlock();
   }
-
-  // only send msp data when binding is not active
-  static bool mspTransferActive = false;
-
   if (InBindingMode)
   {
     // exit bind mode if package after some repeats
@@ -937,27 +914,35 @@ void loop()
       ExitBindingMode();
     }
   }
-  // else if (!MspSender.IsActive())
-  // {
-  //   // sending is done and we need to update our flag
-  //   if (mspTransferActive)
-  //   {
-  //     // unlock buffer for msp messages
-  //     CRSF::UnlockMspMessage();
-  //     mspTransferActive = false;
-  //   }
-  //   // we are not sending so look for next msp package
-  //   else
-  //   {
-  //     uint8_t* mspData;
-  //     uint8_t mspLen;
-  //     CRSF::GetMspMessage(&mspData, &mspLen);
-  //     // if we have a new msp package start sending
-  //     if (mspData != nullptr)
-  //     {
-  //       MspSender.SetDataToTransmit(mspData, mspLen);
-  //       mspTransferActive = true;
-  //     }
-  //   }
-  // }
+  else if (!MspSender.IsActive())
+  {
+    auto size = apInputBuffer.size();
+    if (size >= 140)
+    {
+      apInputBuffer.lock();
+      apInputBuffer.popBytes(StubbornSenderBuffer, 140);
+      apInputBuffer.unlock();
+      MspSender.SetDataToTransmit(StubbornSenderBuffer, 140);
+    }
+    // // sending is done and we need to update our flag
+    // if (mspTransferActive)
+    // {
+    //   // unlock buffer for msp messages
+    //   CRSF::UnlockMspMessage();
+    //   mspTransferActive = false;
+    // }
+    // // we are not sending so look for next msp package
+    // else
+    // {
+    //   uint8_t* mspData;
+    //   uint8_t mspLen;
+    //   CRSF::GetMspMessage(&mspData, &mspLen);
+    //   // if we have a new msp package start sending
+    //   if (mspData != nullptr)
+    //   {
+    //     MspSender.SetDataToTransmit(mspData, mspLen);
+    //     mspTransferActive = true;
+    //   }
+    // }
+  }
 }
