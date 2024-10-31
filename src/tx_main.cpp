@@ -1,14 +1,7 @@
-// 更新日期：2024年10月30日
-
-// 已实现项：
-// - 设备绑定与换绑；
-// - FHSS同步跳频通信（待优化）；
-// - 可变通信速率；
-// - 简易断线重连机制（待优化）；
-// - 双向透传功能（无重传）；
-// - 使用Stubborn实现可靠数据传输（可行，数据包最大为160字节，再大的话需要更改OTA包封装）（双向同时收发时串口繁忙造成数据丢失）；
-
-// 进行中项：
+// 修改记录：
+// 2024年10月31日 -> 添加busyTransmitting逻辑   
+// 2024年10月31日 -> 按ELRS布局优化代码      
+// 2024年10月31日 -> 注释无关代码      
 
 /* ELRS include */
 
@@ -46,61 +39,61 @@
 
 /* ELRS variable */
 
-#define MSP_PACKET_SEND_INTERVAL 10LU
+// #define MSP_PACKET_SEND_INTERVAL 10LU
 
-MSP msp;
+// MSP msp;
 ELRS_EEPROM eeprom;
 
 FIFO<AP_MAX_BUF_LEN> apInputBuffer;
 FIFO<AP_MAX_BUF_LEN> apOutputBuffer;
 
-#define UART_INPUT_BUF_LEN 1024
-FIFO<UART_INPUT_BUF_LEN> uartInputBuffer;
+// #define UART_INPUT_BUF_LEN 1024
+// FIFO<UART_INPUT_BUF_LEN> uartInputBuffer;
 
-// Buffer for current stubbon sender packet (mavlink only)
-uint8_t mavlinkSSBuffer[CRSF_MAX_PACKET_LEN]; 
+// // Buffer for current stubbon sender packet (mavlink only)
+// uint8_t mavlinkSSBuffer[CRSF_MAX_PACKET_LEN]; 
 
-bool NextPacketIsMspData = false;  
+// bool NextPacketIsMspData = false;  
 
-#define syncSpamAmount 3
-#define syncSpamAmountAfterRateChange 10
-volatile uint8_t syncSpamCounter = 0;
-volatile uint8_t syncSpamCounterAfterRateChange = 0;
+// #define syncSpamAmount 3
+// #define syncSpamAmountAfterRateChange 10
+// volatile uint8_t syncSpamCounter = 0;
+// volatile uint8_t syncSpamCounterAfterRateChange = 0;
 uint32_t rfModeLastChangedMS = 0;
 uint32_t SyncPacketLastSent = 0;
 
 
 volatile uint32_t LastTLMpacketRecvMillis = 0;
-uint32_t TLMpacketReported = 0;
-static bool commitInProgress = false;
+// uint32_t TLMpacketReported = 0;
+// static bool commitInProgress = false;
 
-LQCALC<25> LQCalc;
+// LQCALC<25> LQCalc;
 
-// volatile bool busyTransmitting;
-static volatile bool ModelUpdatePending;
+volatile bool busyTransmitting;
+// static volatile bool ModelUpdatePending;
 
 uint8_t MSPDataPackage[5];
 #define BindingSpamAmount 25
 static uint8_t BindingSendCount;
-bool RxWiFiReadyToSend = false;
+// bool RxWiFiReadyToSend = false;
 
-bool headTrackingEnabled = false;
-#if !defined(CRITICAL_FLASH)
-static uint16_t ptrChannelData[3] = {CRSF_CHANNEL_VALUE_MID, CRSF_CHANNEL_VALUE_MID, CRSF_CHANNEL_VALUE_MID};
-static uint32_t lastPTRValidTimeMs;
-#endif
+// bool headTrackingEnabled = false;
+// #if !defined(CRITICAL_FLASH)
+// static uint16_t ptrChannelData[3] = {CRSF_CHANNEL_VALUE_MID, CRSF_CHANNEL_VALUE_MID, CRSF_CHANNEL_VALUE_MID};
+// static uint32_t lastPTRValidTimeMs;
+// #endif
 
 static TxTlmRcvPhase_e TelemetryRcvPhase = ttrpTransmitting;
 StubbornReceiver TelemetryReceiver;
 StubbornSender MspSender;
-uint8_t CRSFinBuffer[CRSF_MAX_PACKET_LEN+1];
+// uint8_t CRSFinBuffer[CRSF_MAX_PACKET_LEN+1];
 
 /* User variable */
 
-#define OLED_RESET 4
-#define SCREEN_WIDTH 128
-#define SCREEN_HEIGHT 64
-Adafruit_SSD1306 display(OLED_RESET);
+// #define OLED_RESET 4
+// #define SCREEN_WIDTH 128
+// #define SCREEN_HEIGHT 64
+// Adafruit_SSD1306 display(OLED_RESET);
 
 #define AIRRATE RATE_LORA_333HZ_8CH
 #define BUADRATE 9600
@@ -128,7 +121,7 @@ void ICACHE_RAM_ATTR LinkStatsFromOta(OTA_LinkStats_s * const ls) // ELRS移植�
 {
   // int8_t snrScaled = ls->SNR;
   // DynamicPower_TelemetryUpdate(snrScaled);
-  //
+
   // // Antenna is the high bit in the RSSI_1 value
   // // RSSI received is signed, inverted polarity (positive value = -dBm)
   // // OpenTX's value is signed and will display +dBm and -dBm properly
@@ -174,7 +167,7 @@ bool ICACHE_RAM_ATTR ProcessTLMpacket(SX12xxDriverCommon::rx_status const status
     return false;
   }
 
-  // LastTLMpacketRecvMillis = millis();
+  LastTLMpacketRecvMillis = millis();
   // LQCalc.add();
   //
   // Radio.GetLastPacketStats();
@@ -251,7 +244,7 @@ void ICACHE_RAM_ATTR GenerateSyncPacketData(OTA_Sync_s * const syncPtr) // ELRS�
   //     syncSpamCounterAfterRateChange = 0;
   // }
 
-  // SyncPacketLastSent = millis();
+  SyncPacketLastSent = millis();
 
   // expresslrs_tlm_ratio_e newTlmRatio = UpdateTlmRatioEffective();
 
@@ -402,7 +395,7 @@ void ICACHE_RAM_ATTR SendRCdataToRF() // ELRS移植，注释源码另起修改
   //   }
   // }
 
-  // busyTransmitting = true;
+  busyTransmitting = true;
 
   // uint32_t const now = millis();
   // ESP requires word aligned buffer
@@ -524,38 +517,6 @@ void ICACHE_RAM_ATTR SendRCdataToRF() // ELRS移植，注释源码另起修改
   }
 }
 
-static void HandleUARTin()
-{
-  if(Serial.available())
-  { 
-    auto size = std::min(apInputBuffer.free(), (uint16_t)Serial.available());
-    if (size > 0)
-    {
-      uint8_t buf[size];
-      Serial.readBytes(buf, size);
-      apInputBuffer.lock();
-      apInputBuffer.pushBytes(buf, size);
-      apInputBuffer.unlock();
-    }
-  }
-}
-
-static void HandleUARTout()
-{
-    if(Serial.availableForWrite())
-    {
-        auto size = apOutputBuffer.size();
-        if (size)
-        {
-            uint8_t buf[size];
-            apOutputBuffer.lock();
-            apOutputBuffer.popBytes(buf, size);
-            apOutputBuffer.unlock();
-            Serial.write(buf, size);
-        }
-    }
-}
-
 void ICACHE_RAM_ATTR HWtimerCallbackTock() // ELRS移植，注释源码另起修改
 {
   // /* If we are busy writing to EEPROM (committing config changes) then we just advance the nonces, i.e. no SPI traffic */
@@ -617,10 +578,12 @@ void ICACHE_RAM_ATTR HWtimerCallbackTock() // ELRS移植，注释源码另起修
 bool ICACHE_RAM_ATTR RXdoneISR(SX12xxDriverCommon::rx_status const status) // ELRS移植，注释源码另起修改
 {
   fullRcount++;
+
   // if (LQCalc.currentIsSet())
   // {
   //   return false; // Already received tlm, do not run ProcessTLMpacket() again.
   // }
+
   bool packetSuccessful = ProcessTLMpacket(status);
 #if defined(Regulatory_Domain_EU_CE_2400)
   if (packetSuccessful)
@@ -628,16 +591,16 @@ bool ICACHE_RAM_ATTR RXdoneISR(SX12xxDriverCommon::rx_status const status) // EL
     SetClearChannelAssessmentTime();
   }
 #endif
-  // busyTransmitting = false;
+  busyTransmitting = false;
   return packetSuccessful;
 }
 
 void ICACHE_RAM_ATTR TXdoneISR() // ELRS移植，注释源码另起修改
 {
-//   if (!busyTransmitting)
-//   {
-//     return; // Already finished transmission and do not call HandleFHSS() a second time, which may hop the frequency!
-//   }
+  if (!busyTransmitting)
+  {
+    return; // Already finished transmission and do not call HandleFHSS() a second time, which may hop the frequency!
+  }
   fullScount++;
   if (connectionState != awaitingModelId)
   {
@@ -654,7 +617,44 @@ void ICACHE_RAM_ATTR TXdoneISR() // ELRS移植，注释源码另起修改
     }
 #endif // non-CE
   }
-//   busyTransmitting = false;
+  busyTransmitting = false;
+}
+
+static void UpdateConnectDisconnectStatus()
+{
+  // Number of telemetry packets which can be lost in a row before going to disconnected state
+  constexpr unsigned RX_LOSS_CNT = 5;
+  // Must be at least 512ms and +2 to account for any rounding down and partial millis()
+  const uint32_t msConnectionLostTimeout = std::max((uint32_t)512U,
+    (uint32_t)ExpressLRS_currTlmDenom * ExpressLRS_currAirRate_Modparams->interval / (1000U / RX_LOSS_CNT)
+    ) + 2U;
+  // Capture the last before now so it will always be <= now
+  const uint32_t lastTlmMillis = LastTLMpacketRecvMillis;
+  const uint32_t now = millis();
+  if (lastTlmMillis && ((now - lastTlmMillis) <= msConnectionLostTimeout))
+  {
+    if (connectionState != connected)
+    {
+      connectionState = connected;
+      // CRSFHandset::ForwardDevicePings = true;
+      Serial.println("got downlink conn");
+      // DBGLN("got downlink conn");
+
+      apInputBuffer.flush();
+      apOutputBuffer.flush();
+      // uartInputBuffer.flush();
+
+      // VtxTriggerSend();
+    }
+  }
+  // If past RX_LOSS_CNT, or in awaitingModelId state for longer than DisconnectTimeoutMs, go to disconnected
+  else if (connectionState == connected ||
+    (now - rfModeLastChangedMS) > ExpressLRS_currAirRate_RFperfParams->DisconnectTimeoutMs)
+  {
+    connectionState = disconnected;
+    // connectionHasModelMatch = true;
+    // CRSFHandset::ForwardDevicePings = false;
+  }
 }
 
 void SendUIDOverMSP() // ELRS移植，注释源码另起修改
@@ -668,29 +668,30 @@ void SendUIDOverMSP() // ELRS移植，注释源码另起修改
 
 static void EnterBindingMode() // ELRS移植，注释源码另起修改
 {
-    if (InBindingMode)
-        return;
+  if (InBindingMode)
+    return;
 
-    // Disable the TX timer and wait for any TX to complete
-    hwTimer::stop();
-    // while (busyTransmitting);
+  // Disable the TX timer and wait for any TX to complete
+  hwTimer::stop();
+  while (busyTransmitting);
 
-    // Queue up sending the Master UID as MSP packets
-    SendUIDOverMSP();
+  // Queue up sending the Master UID as MSP packets
+  SendUIDOverMSP();
 
-    // Binding uses a CRCInit=0, 50Hz, and InvertIQ
-    OtaCrcInitializer = 0;
-    OtaNonce = 0; // Lock the OtaNonce to prevent syncspam packets
-    InBindingMode = true; // Set binding mode before SetRFLinkRate() for correct IQ
+  // Binding uses a CRCInit=0, 50Hz, and InvertIQ
+  OtaCrcInitializer = 0;
+  OtaNonce = 0; // Lock the OtaNonce to prevent syncspam packets
+  InBindingMode = true; // Set binding mode before SetRFLinkRate() for correct IQ
 
-    // Start attempting to bind
-    // Lock the RF rate and freq while binding
-    SetRFLinkRate(enumRatetoIndex(RATE_BINDING));
+  // Start attempting to bind
+  // Lock the RF rate and freq while binding
+  SetRFLinkRate(enumRatetoIndex(RATE_BINDING));
 
-    // Start transmitting again
-    hwTimer::resume();
-    Serial.println("Entered binding mode at freq = " + String(Radio.currFreq));
-//   DBGLN("Entered binding mode at freq = %d", Radio.currFreq);
+  // Start transmitting again
+  hwTimer::resume();
+  
+  Serial.println("Entered binding mode at freq = " + String(Radio.currFreq));
+  // DBGLN("Entered binding mode at freq = %d", Radio.currFreq);
 }
 
 static void ExitBindingMode() // ELRS移植，注释源码另起修改
@@ -704,11 +705,116 @@ static void ExitBindingMode() // ELRS移植，注释源码另起修改
   OtaUpdateCrcInitFromUid();
   InBindingMode = false; // Clear binding mode before SetRFLinkRate() for correct IQ
 
-  //return to original rate
-  SetRFLinkRate(enumRatetoIndex(AIRRATE));
+  SetRFLinkRate(enumRatetoIndex(AIRRATE)); //return to original rate
   // SetRFLinkRate(config.GetRate()); 
+
   Serial.println("Exiting binding mode");
   // DBGLN("Exiting binding mode");
+}
+
+static void HandleUARTout() // ELRS移植，注释源码另起修改
+{
+  if(Serial.availableForWrite())
+  // if (firmwareOptions.is_airport)
+  {
+    auto size = apOutputBuffer.size();
+    if (size)
+    {
+      uint8_t buf[size];
+      apOutputBuffer.lock();
+      apOutputBuffer.popBytes(buf, size);
+      apOutputBuffer.unlock();
+      Serial.write(buf, size);
+      // TxUSB->write(buf, size);
+    }
+  }
+}
+
+static void HandleUARTin() // ELRS移植，注释源码另起修改
+{
+  if(Serial.available())
+  { 
+    auto size = std::min(apInputBuffer.free(), (uint16_t)Serial.available());
+    if (size > 0)
+    {
+      uint8_t buf[size];
+      Serial.readBytes(buf, size);
+      apInputBuffer.lock();
+      apInputBuffer.pushBytes(buf, size);
+      apInputBuffer.unlock();
+    }
+  }
+  //   // Read from the USB serial port
+  // if (TxUSB->available())
+  // {
+  //   if (firmwareOptions.is_airport)
+  //   {
+  //     auto size = std::min(apInputBuffer.free(), (uint16_t)TxUSB->available());
+  //     if (size > 0)
+  //     {
+  //       uint8_t buf[size];
+  //       TxUSB->readBytes(buf, size);
+  //       apInputBuffer.lock();
+  //       apInputBuffer.pushBytes(buf, size);
+  //       apInputBuffer.unlock();
+  //     }
+  //   }
+  //   else
+  //   {
+  //     auto size = std::min(uartInputBuffer.free(), (uint16_t)TxUSB->available());
+  //     if (size > 0)
+  //     {
+  //       uint8_t buf[size];
+  //       TxUSB->readBytes(buf, size);
+  //       uartInputBuffer.lock();
+  //       uartInputBuffer.pushBytes(buf, size);
+  //       uartInputBuffer.unlock();
+
+  //       // Lets check if the data is Mav and auto change LinkMode
+  //       // Start the hwTimer since the user might be operating the module as a standalone unit without a handset.
+  //       if (connectionState == noCrossfire)
+  //       {
+  //         if (isThisAMavPacket(buf, size))
+  //         {
+  //           config.SetLinkMode(TX_MAVLINK_MODE);
+  //           UARTconnected();
+  //         }
+  //       }
+  //     }
+  //   }
+  // }
+
+  // // Read from the Backpack serial port
+  // if (TxBackpack->available())
+  // {
+  //   auto size = std::min(uartInputBuffer.free(), (uint16_t)TxBackpack->available());
+  //   if (size > 0)
+  //   {
+  //     uint8_t buf[size];
+  //     TxBackpack->readBytes(buf, size);
+
+  //     // If the TX is in Mavlink mode, push the bytes into the fifo buffer
+  //     if (config.GetLinkMode() == TX_MAVLINK_MODE)
+  //     {
+  //       uartInputBuffer.lock();
+  //       uartInputBuffer.pushBytes(buf, size);
+  //       uartInputBuffer.unlock();
+
+  //       // The tx is in Mavlink mode and receiving data from the Backpack.
+  //       // Start the hwTimer since the user might be operating the module as a standalone unit without a handset.
+  //       if (connectionState == noCrossfire)
+  //       {
+  //         if (isThisAMavPacket(buf, size))
+  //         {
+  //           UARTconnected();
+  //         }
+  //       }
+  //     }
+
+  //     // Try to parse any MSP packets from the Backpack
+  //     ParseMSPData(buf, size);
+  //   }
+  // }
 }
 
 static void setupBindingFromConfig() // ELRS移植，注释源码另起修改
@@ -743,60 +849,60 @@ static void setupBindingFromConfig() // ELRS移植，注释源码另起修改
 
 /* User Function */
 
-void displayDebugInfo()
-{
-    display.clearDisplay();
-    if (InBindingMode)
-    {
-        display.setCursor(0, 0);
-        display.println("sending UID...");
-    }
-    else
-    {
-        // UID
-        display.setCursor(0, 0);
-        display.println("ID");
-        display.setCursor(18, 0);
-        display.println(UID[2]);
-        display.setCursor(42, 0);
-        display.println(UID[3]);
-        display.setCursor(66, 0);
-        display.println(UID[4]);
-        display.setCursor(90, 0);
-        display.println(UID[5]);
-        // send freq
-        display.setCursor(0, 16);
-        display.println("Send");
-        display.setCursor(30, 16);
-        display.println(validSendFreq);
-        // full Send freq
-        display.setCursor(54, 16);
-        display.println("FullS");
-        display.setCursor(92, 16);
-        display.println(fullSfreq); 
-        // receive freq
-        display.setCursor(0, 24);
-        display.println("Recv");
-        display.setCursor(30, 24);
-        display.println(validReceiveFreq);  
-        // full Recv freq
-        display.setCursor(54, 24);
-        display.println("FullR");
-        display.setCursor(92, 24);
-        display.println(fullRfreq);
-    }
-    // Freq
-    display.setCursor(0, 8);
-    display.println("FQ");
-    display.setCursor(18, 8);
-    display.println(Radio.currFreq);
-    // Channel
-    display.setCursor(76, 8);
-    display.println("CH");
-    display.setCursor(94, 8);
-    display.println(FHSSgetCurrIndex());
-    display.display();
-}
+// void displayDebugInfo()
+// {
+//     display.clearDisplay();
+//     if (InBindingMode)
+//     {
+//         display.setCursor(0, 0);
+//         display.println("sending UID...");
+//     }
+//     else
+//     {
+//         // UID
+//         display.setCursor(0, 0);
+//         display.println("ID");
+//         display.setCursor(18, 0);
+//         display.println(UID[2]);
+//         display.setCursor(42, 0);
+//         display.println(UID[3]);
+//         display.setCursor(66, 0);
+//         display.println(UID[4]);
+//         display.setCursor(90, 0);
+//         display.println(UID[5]);
+//         // send freq
+//         display.setCursor(0, 16);
+//         display.println("Send");
+//         display.setCursor(30, 16);
+//         display.println(validSendFreq);
+//         // full Send freq
+//         display.setCursor(54, 16);
+//         display.println("FullS");
+//         display.setCursor(92, 16);
+//         display.println(fullSfreq); 
+//         // receive freq
+//         display.setCursor(0, 24);
+//         display.println("Recv");
+//         display.setCursor(30, 24);
+//         display.println(validReceiveFreq);  
+//         // full Recv freq
+//         display.setCursor(54, 24);
+//         display.println("FullR");
+//         display.setCursor(92, 24);
+//         display.println(fullRfreq);
+//     }
+//     // Freq
+//     display.setCursor(0, 8);
+//     display.println("FQ");
+//     display.setCursor(18, 8);
+//     display.println(Radio.currFreq);
+//     // Channel
+//     display.setCursor(76, 8);
+//     display.println("CH");
+//     display.setCursor(94, 8);
+//     display.println(FHSSgetCurrIndex());
+//     display.display();
+// }
 
 void handleButtonPress(void)
 {
@@ -812,23 +918,23 @@ void handleButtonPress(void)
 
 void TimerHandler()
 {
-    static uint16_t timercount = 0;
-    if(timercount % (1000000 / TIMER_INTERVAL_MS) == 0)
-    {
-        validSendFreq = validSendCount;
-        validSendCount = 0;
-        validReceiveFreq = validReceiveCount;
-        validReceiveCount = 0;
-        fullSfreq = fullScount;
-        fullScount = 0;
-        fullRfreq = fullRcount;
-        fullRcount = 0;
-    }
-    if(fullRfreq < 130)
-    {
-        digitalToggle(PC13);
-    }
-    timercount++;
+  static uint16_t timercount = 0;
+  if(timercount % (1000000 / TIMER_INTERVAL_MS) == 0)
+  {
+    validSendFreq = validSendCount;
+    validSendCount = 0;
+    validReceiveFreq = validReceiveCount;
+    validReceiveCount = 0;
+    fullSfreq = fullScount;
+    fullScount = 0;
+    fullRfreq = fullRcount;
+    fullRcount = 0;
+  }
+  if(fullRfreq < 130)
+    digitalToggle(PC13);
+  else
+    digitalWrite(PC13, LOW);
+  timercount++;
 }
 
 void setupBasicHardWare(void)
@@ -841,15 +947,15 @@ void setupBasicHardWare(void)
     // Button
     pinMode(PB1, INPUT_PULLUP);
     attachInterrupt(digitalPinToInterrupt(PB1), handleButtonPress, FALLING);
-    // OLED
-    Wire.setSCL(PB8);
-    Wire.setSDA(PB9);
-    Wire.begin();
-    display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
-    display.setTextSize(1);
-    display.setTextColor(WHITE);
-    display.clearDisplay();
-    display.display();
+    // // OLED
+    // Wire.setSCL(PB8);
+    // Wire.setSDA(PB9);
+    // Wire.begin();
+    // display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+    // display.setTextSize(1);
+    // display.setTextColor(WHITE);
+    // display.clearDisplay();
+    // display.display();
     // sx1280 GPIO
     pinMode(GPIO_PIN_TX_EN, OUTPUT);
     pinMode(GPIO_PIN_RX_EN, OUTPUT);
@@ -857,47 +963,49 @@ void setupBasicHardWare(void)
     ITimer.attachInterruptInterval(TIMER_INTERVAL_MS, TimerHandler);
 }
 
+
 /* setup and loop */
 
-void setup() // 保留Stubborn模块注释
+void setup()
 {
-    setupBasicHardWare();
+  setupBasicHardWare();
 
-    setupBindingFromConfig();
-    FHSSrandomiseFHSSsequence(uidMacSeedGet());
+  setupBindingFromConfig();
+  FHSSrandomiseFHSSsequence(uidMacSeedGet());
 
-    Radio.TXdoneCallback = &TXdoneISR;
-    Radio.RXdoneCallback = &RXdoneISR;
+  Radio.TXdoneCallback = &TXdoneISR;
+  Radio.RXdoneCallback = &RXdoneISR;
 
-    Radio.currFreq = FHSSgetInitialFreq();
+  Radio.currFreq = FHSSgetInitialFreq();
 
-    Radio.Begin(FHSSgetMinimumFreq(), FHSSgetMaximumFreq());
+  Radio.Begin(FHSSgetMinimumFreq(), FHSSgetMaximumFreq());
 
-    TelemetryReceiver.SetDataToReceive(StubbornReceiverBuffer, sizeof(StubbornReceiverBuffer));
-    // TelemetryReceiver.SetDataToReceive(CRSFinBuffer, sizeof(CRSFinBuffer));
+  TelemetryReceiver.SetDataToReceive(StubbornReceiverBuffer, sizeof(StubbornReceiverBuffer));
+  // TelemetryReceiver.SetDataToReceive(CRSFinBuffer, sizeof(CRSFinBuffer));
 
-    SetRFLinkRate(enumRatetoIndex(AIRRATE));
+  SetRFLinkRate(enumRatetoIndex(AIRRATE));
 
-    hwTimer::init(nullptr, HWtimerCallbackTock);
-    hwTimer::resume();
+  hwTimer::init(nullptr, HWtimerCallbackTock);
+  hwTimer::resume();
 
-    ExpressLRS_currTlmDenom = 2;
+  ExpressLRS_currTlmDenom = 2;
 }
 
 void loop()
 {
-  // uint32_t now = millis();
+  uint32_t now = millis();
 
   HandleUARTout();
 
   HandleUARTin();
 
-  if(fullRfreq > 130)
+  if (connectionState < MODE_STATES)
   {
-    digitalWrite(PC13, LOW);
+    UpdateConnectDisconnectStatus();
   }
-  // // only send msp data when binding is not active
-  // static bool mspTransferActive = false;
+  
+  // only send msp data when binding is not active
+  static bool mspTransferActive = false;
 
   if (TelemetryReceiver.HasFinishedData())
   {
@@ -924,25 +1032,5 @@ void loop()
       apInputBuffer.unlock();
       MspSender.SetDataToTransmit(StubbornSenderBuffer, 140);
     }
-    // // sending is done and we need to update our flag
-    // if (mspTransferActive)
-    // {
-    //   // unlock buffer for msp messages
-    //   CRSF::UnlockMspMessage();
-    //   mspTransferActive = false;
-    // }
-    // // we are not sending so look for next msp package
-    // else
-    // {
-    //   uint8_t* mspData;
-    //   uint8_t mspLen;
-    //   CRSF::GetMspMessage(&mspData, &mspLen);
-    //   // if we have a new msp package start sending
-    //   if (mspData != nullptr)
-    //   {
-    //     MspSender.SetDataToTransmit(mspData, mspLen);
-    //     mspTransferActive = true;
-    //   }
-    // }
   }
 }
