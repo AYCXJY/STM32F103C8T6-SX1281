@@ -1,14 +1,8 @@
-// 更新日期：2024年10月30日
+// 修改记录：
+// 2024年10月31日 -> 注释无关代码
 
-// 已实现项：
-// - 设备绑定与换绑；
-// - FHSS同步跳频通信（待优化）；
-// - 可变通信速率；
-// - 简易断线重连机制（待优化）；
-// - 双向透传功能（无重传）；
-// - 使用Stubborn实现可靠数据传输（可行，数据包最大为160字节，再大的话需要更改OTA包封装）（双向同时收发时串口繁忙造成数据丢失）；
-
-// 进行中项：
+// 问题：
+// - 连接质量很低，容易断线；
 
 /* ELRS include */
 
@@ -61,42 +55,46 @@
 
 /* ELRS variable */
 
+// #define SEND_LINK_STATS_TO_FC_INTERVAL 100
+// #define DIVERSITY_ANTENNA_INTERVAL 5
+// #define DIVERSITY_ANTENNA_RSSI_TRIGGER 5
+#define PACKET_TO_TOCK_SLACK 200 // Desired buffer time between Packet ISR and Tock ISR
+
+PFD PFDloop;
+// Crc2Byte ota_crc;
+ELRS_EEPROM eeprom;
+// RxConfig config;
+// Telemetry telemetry;
+// Stream *SerialLogger;
+// bool hardwareConfigured = true;
+
 StubbornSender TelemetrySender;
-static uint8_t telemetryBurstCount;
-static uint8_t telemetryBurstMax;
+// static uint8_t telemetryBurstCount;
+// static uint8_t telemetryBurstMax;
 
 StubbornReceiver MspReceiver;
 uint8_t MspData[140];
+// uint8_t MspData[ELRS_MSP_BUFFER];
 
-// Buffer for current stubbon sender packet (mavlink only)
-uint8_t mavlinkSSBuffer[CRSF_MAX_PACKET_LEN]; 
+// uint8_t mavlinkSSBuffer[CRSF_MAX_PACKET_LEN]; // Buffer for current stubbon sender packet (mavlink only)
 
 static bool tlmSent = false;
 static uint8_t NextTelemetryType = ELRS_TELEMETRY_TYPE_LINK;
 static bool telemBurstValid;
-
-#define PACKET_TO_TOCK_SLACK 200 
-
-uint32_t LastValidPacket = 0;           //Time the last valid packet was recv
-uint32_t LastSyncPacket = 0;            //Time the last valid packet was recv
-
-bool BindingModeRequest = false;
-static uint32_t BindingRateChangeTime;
-#define BindingRateChangeCyclePeriod 125
-
-// 存储地址 0x0801FC00
-ELRS_EEPROM eeprom;
-PFD PFDloop;
-
+/// PFD Filters ////////////////
 LPF LPF_Offset(2);
 LPF LPF_OffsetDx(4);
-
+/// LQ/RSSI/SNR Calculation //////////
 LQCALC<100> LQCalc;
 LQCALC<100> LQCalcDVDA;
 uint8_t uplinkLQ;
 LPF LPF_UplinkRSSI0(5);  // track rssi per antenna
 LPF LPF_UplinkRSSI1(5);
 MeanAccumulator<int32_t, int8_t, -16> SnrMean;
+
+bool BindingModeRequest = false;
+static uint32_t BindingRateChangeTime;
+#define BindingRateChangeCyclePeriod 125
 
 static uint8_t scanIndex;
 uint8_t ExpressLRS_nextAirRateIndex;
@@ -113,6 +111,9 @@ bool didFHSS = false;
 bool alreadyFHSS = false;
 bool alreadyTLMresp = false;
 
+uint32_t LastValidPacket = 0;           //Time the last valid packet was recv
+uint32_t LastSyncPacket = 0;            //Time the last valid packet was recv
+
 /// Variables for Sync Behaviour ////
 uint32_t cycleInterval; // in ms
 uint32_t RFmodeLastCycled = 0;
@@ -122,10 +123,10 @@ bool LockRFmode = false;
 
 /* User variable */
 
-#define OLED_RESET     4 
-#define SCREEN_WIDTH   128 
-#define SCREEN_HEIGHT  64
-Adafruit_SSD1306 display(OLED_RESET);
+// #define OLED_RESET     4 
+// #define SCREEN_WIDTH   128 
+// #define SCREEN_HEIGHT  64
+// Adafruit_SSD1306 display(OLED_RESET);
 
 #define AIRRATE RATE_LORA_333HZ_8CH
 #define BUADRATE 9600
@@ -406,6 +407,7 @@ bool ICACHE_RAM_ATTR HandleSendTelemetryResponse() // ELRS移植，注释源码�
     // }
 
     Radio.TXnb((uint8_t*)&otaPkt, ExpressLRS_currAirRate_Modparams->PayloadLength, transmittingRadio);
+    
     // if (transmittingRadio == SX12XX_Radio_NONE)
     // {
     //     // No packet will be sent due to LBT / Telem forced off.
@@ -431,7 +433,7 @@ int32_t ICACHE_RAM_ATTR HandleFreqCorr(bool value) // ELRS移植，注释源码�
             tempFC--; // FREQ_STEP units
             if (tempFC == FreqCorrectionMin)
             {
-                // Serial.println("Max -FreqCorrection reached!");
+                Serial.println("Max -FreqCorrection reached!");
                 // DBGLN("Max -FreqCorrection reached!");
             }
         }
@@ -443,7 +445,7 @@ int32_t ICACHE_RAM_ATTR HandleFreqCorr(bool value) // ELRS移植，注释源码�
             tempFC++; // FREQ_STEP units
             if (tempFC == FreqCorrectionMax)
             {
-                // Serial.println("Max +FreqCorrection reached!");
+                Serial.println("Max +FreqCorrection reached!");
                 // DBGLN("Max +FreqCorrection reached!");
             }
         }
@@ -463,7 +465,6 @@ int32_t ICACHE_RAM_ATTR HandleFreqCorr(bool value) // ELRS移植，注释源码�
 
 void ICACHE_RAM_ATTR updatePhaseLock() // ELRS移植，注释源码另起修改
 {
-    // if (PFDloop.hasResult() && PFDloop.calcResult() < 1500)
     if (connectionState != disconnected && PFDloop.hasResult())
     {
         int32_t RawOffset = PFDloop.calcResult();
@@ -488,7 +489,6 @@ void ICACHE_RAM_ATTR updatePhaseLock() // ELRS移植，注释源码另起修改
                 }
             }
         }
-        // if (slack > 500)
         if (connectionState != connected)
         {
             hwTimer::phaseShift(RawOffset >> 1);
@@ -514,7 +514,6 @@ void ICACHE_RAM_ATTR HWtimerCallbackTick() // ELRS移植，注释源码另起修
     updatePhaseLock();
     OtaNonce++;
     
-    // ELRS 自己注释的
     // if (!alreadyTLMresp && !alreadyFHSS && !LQCalc.currentIsSet()) // packet timeout AND didn't DIDN'T just hop or send TLM
     // {
     //     Radio.RXnb(); // put the radio cleanly back into RX in case of garbage data
@@ -539,38 +538,6 @@ void ICACHE_RAM_ATTR HWtimerCallbackTick() // ELRS移植，注释源码另起修
 
     alreadyTLMresp = false;
     alreadyFHSS = false;
-}
-
-static void HandleUARTin()
-{
-    if(Serial.available())
-    {
-        auto size = std::min(apInputBuffer.free(), (uint16_t)Serial.available());
-        if (size > 0)
-        {
-            uint8_t buf[size];
-            Serial.readBytes(buf, size);
-            apInputBuffer.lock();
-            apInputBuffer.pushBytes(buf, size);
-            apInputBuffer.unlock();
-        }
-    }
-}
-
-static void HandleUARTout()
-{
-    if(Serial.availableForWrite())
-    {
-        auto size = apOutputBuffer.size();
-        if (size)
-        {
-            uint8_t buf[size];
-            apOutputBuffer.lock();
-            apOutputBuffer.popBytes(buf, size);
-            apOutputBuffer.unlock();
-            Serial.write(buf, size);
-        }
-    }
 }
 
 void ICACHE_RAM_ATTR HWtimerCallbackTock() // ELRS移植，注释源码另起修改
@@ -612,7 +579,7 @@ void ICACHE_RAM_ATTR HWtimerCallbackTock() // ELRS移植，注释源码另起修
     }
     didFHSS = false;
 
-    // Radio.isFirstRxIrq = true;
+    Radio.isFirstRxIrq = true;
     // updateDiversity();
     tlmSent = HandleSendTelemetryResponse();
 
@@ -723,10 +690,10 @@ void ICACHE_RAM_ATTR OnELRSBindMSP(uint8_t* newUid4) // ELRS移植，注释源�
     Serial.println();
     // DBGLN("New UID = %u, %u, %u, %u, %u, %u", UID[0], UID[1], UID[2], UID[3], UID[4], UID[5]);
 
-    // Set new UID in eeprom
-    // EEPROM commit will happen on the main thread in ExitBindingMode()
-    eeprom.Put(0, UID);
+    // // Set new UID in eeprom
+    // // EEPROM commit will happen on the main thread in ExitBindingMode()
     // config.SetUID(UID);
+    eeprom.Put(0, UID);
     UIDIsModified = true; // 取代 config.IsModified()
 }
 
@@ -863,10 +830,10 @@ bool ICACHE_RAM_ATTR ProcessRFPacket(SX12xxDriverCommon::rx_status const status)
 
     OTA_Packet_s * const otaPktPtr = (OTA_Packet_s * const)Radio.RXdataBuffer;
     
-    if(OtaIsFullRes)
-        CRCvalue = otaPktPtr->full.crc;
-    else 
-        CRCvalue = otaPktPtr->std.crcLow | otaPktPtr->std.crcHigh;
+    // if(OtaIsFullRes)
+    //     CRCvalue = otaPktPtr->full.crc;
+    // else 
+    //     CRCvalue = otaPktPtr->std.crcLow | otaPktPtr->std.crcHigh;
 
     if (!OtaValidatePacketCrc(otaPktPtr))
     {
@@ -1242,70 +1209,70 @@ void EnterBindingModeSafely() // ELRS移植，注释源码另起修改
 
 /* User Function*/
 
-void displayDebugInfo()
-{
-    display.clearDisplay();  
-    if(InBindingMode)
-    {            
-        display.setCursor(0, 0);            
-        display.println("receiving UID...");
-    }
-    else
-    {
-        // UID          
-        display.setCursor(0, 0);           
-        display.println("ID");         
-        display.setCursor(18, 0);            
-        display.println(UID[2]);
-        display.setCursor(42, 0);            
-        display.println(UID[3]);
-        display.setCursor(66, 0);            
-        display.println(UID[4]);
-        display.setCursor(90, 0);            
-        display.println(UID[5]);  
-        // send freq
-        display.setCursor(0, 16);
-        display.println("Send");
-        display.setCursor(30, 16);
-        display.println(validSendFreq);
-        // full Send freq
-        display.setCursor(54, 16);
-        display.println("FullS");
-        display.setCursor(92, 16);
-        display.println(fullSfreq); 
-        // receive freq
-        display.setCursor(0, 24);
-        display.println("Recv");
-        display.setCursor(30, 24);
-        display.println(validReceiveFreq);  
-        // full Recv freq
-        display.setCursor(54, 24);
-        display.println("FullR");
-        display.setCursor(92, 24);
-        display.println(fullRfreq);  
-    }
-    // // CRC
-    // display.setCursor(0, 16);
-    // display.println("CRC");
-    // display.setCursor(24, 16);
-    // display.println(CRCvalue);
-    // Freq
-    display.setCursor(0, 8);           
-    display.println("FQ");    
-    display.setCursor(18, 8);           
-    display.println(Radio.currFreq);  
-    // Channel
-    display.setCursor(76, 8);           
-    display.println("CH");  
-    display.setCursor(94, 8);           
-    display.println(FHSSgetCurrIndex());  
-    // // RSSI
-    // display.setCursor(54, 24);     
-    // display.println("RSSI");     
-    // display.setCursor(84, 24);           
-    // display.println(Radio.GetRssiInst(SX12XX_Radio_1)); 
-    display.display();
-}
+// void displayDebugInfo()
+// {
+//     display.clearDisplay();  
+//     if(InBindingMode)
+//     {            
+//         display.setCursor(0, 0);            
+//         display.println("receiving UID...");
+//     }
+//     else
+//     {
+//         // UID          
+//         display.setCursor(0, 0);           
+//         display.println("ID");         
+//         display.setCursor(18, 0);            
+//         display.println(UID[2]);
+//         display.setCursor(42, 0);            
+//         display.println(UID[3]);
+//         display.setCursor(66, 0);            
+//         display.println(UID[4]);
+//         display.setCursor(90, 0);            
+//         display.println(UID[5]);  
+//         // send freq
+//         display.setCursor(0, 16);
+//         display.println("Send");
+//         display.setCursor(30, 16);
+//         display.println(validSendFreq);
+//         // full Send freq
+//         display.setCursor(54, 16);
+//         display.println("FullS");
+//         display.setCursor(92, 16);
+//         display.println(fullSfreq); 
+//         // receive freq
+//         display.setCursor(0, 24);
+//         display.println("Recv");
+//         display.setCursor(30, 24);
+//         display.println(validReceiveFreq);  
+//         // full Recv freq
+//         display.setCursor(54, 24);
+//         display.println("FullR");
+//         display.setCursor(92, 24);
+//         display.println(fullRfreq);  
+//     }
+//     // // CRC
+//     // display.setCursor(0, 16);
+//     // display.println("CRC");
+//     // display.setCursor(24, 16);
+//     // display.println(CRCvalue);
+//     // Freq
+//     display.setCursor(0, 8);           
+//     display.println("FQ");    
+//     display.setCursor(18, 8);           
+//     display.println(Radio.currFreq);  
+//     // Channel
+//     display.setCursor(76, 8);           
+//     display.println("CH");  
+//     display.setCursor(94, 8);           
+//     display.println(FHSSgetCurrIndex());  
+//     // // RSSI
+//     // display.setCursor(54, 24);     
+//     // display.println("RSSI");     
+//     // display.setCursor(84, 24);           
+//     // display.println(Radio.GetRssiInst(SX12XX_Radio_1)); 
+//     display.display();
+// }
 
 void handleButtonPress() 
 {
@@ -1350,15 +1317,15 @@ void setupBasicHardWare()
     // Button
     pinMode(PB1, INPUT_PULLUP);
     attachInterrupt(digitalPinToInterrupt(PB1), handleButtonPress, FALLING);
-    // OLED
-    Wire.setSCL(PB8);
-    Wire.setSDA(PB9);
-    Wire.begin();
-    display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
-    display.setTextSize(1);
-    display.setTextColor(WHITE);
-    display.clearDisplay();
-    display.display();
+    // // OLED
+    // Wire.setSCL(PB8);
+    // Wire.setSDA(PB9);
+    // Wire.begin();
+    // display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+    // display.setTextSize(1);
+    // display.setTextColor(WHITE);
+    // display.clearDisplay();
+    // display.display();
     // sx1280 GPIO
     pinMode(GPIO_PIN_TX_EN, OUTPUT);
     pinMode(GPIO_PIN_RX_EN, OUTPUT);
@@ -1366,6 +1333,37 @@ void setupBasicHardWare()
     ITimer.attachInterruptInterval(TIMER_INTERVAL_MS, TimerHandler);
 }
 
+static void HandleUARTin()
+{
+    if(Serial.available())
+    {
+        auto size = std::min(apInputBuffer.free(), (uint16_t)Serial.available());
+        if (size > 0)
+        {
+            uint8_t buf[size];
+            Serial.readBytes(buf, size);
+            apInputBuffer.lock();
+            apInputBuffer.pushBytes(buf, size);
+            apInputBuffer.unlock();
+        }
+    }
+}
+
+static void HandleUARTout()
+{
+    if(Serial.availableForWrite())
+    {
+        auto size = apOutputBuffer.size();
+        if (size)
+        {
+            uint8_t buf[size];
+            apOutputBuffer.lock();
+            apOutputBuffer.popBytes(buf, size);
+            apOutputBuffer.unlock();
+            Serial.write(buf, size);
+        }
+    }
+}
 
 /* setup and loop */
 
@@ -1398,7 +1396,9 @@ void setup()
 void loop() // ELRS移植，注释源码另起修改
 {    
     HandleUARTin();
+
     HandleUARTout();
+
     unsigned long now = millis();
 
     if (MspReceiver.HasFinishedData())
