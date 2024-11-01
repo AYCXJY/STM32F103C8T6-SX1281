@@ -1,8 +1,3 @@
-// 修改记录：
-// 2024年10月31日 -> 添加busyTransmitting逻辑   
-// 2024年10月31日 -> 按ELRS布局优化代码      
-// 2024年10月31日 -> 注释无关代码      
-
 /* ELRS include */
 
 #include "rxtx_common.h"
