@@ -620,7 +620,7 @@ void ICACHE_RAM_ATTR TXdoneISR() // ELRS移植，注释源码另起修改
   busyTransmitting = false;
 }
 
-static void UpdateConnectDisconnectStatus()
+static void UpdateConnectDisconnectStatus() // ELRS移植，注释源码另起修改
 {
   // Number of telemetry packets which can be lost in a row before going to disconnected state
   constexpr unsigned RX_LOSS_CNT = 5;
