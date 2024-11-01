@@ -532,9 +532,9 @@ void ICACHE_RAM_ATTR HWtimerCallbackTick() // ELRS移植，注释源码另起修
     // }
 
     // CRSF::LinkStatistics.uplink_Link_quality = uplinkLQ;
-    // // Only advance the LQI period counter if we didn't send Telemetry this period
-    // if (!alreadyTLMresp)
-    //     LQCalc.inc();
+    // Only advance the LQI period counter if we didn't send Telemetry this period
+    if (!alreadyTLMresp)
+        LQCalc.inc();
 
     alreadyTLMresp = false;
     alreadyFHSS = false;
@@ -829,10 +829,10 @@ bool ICACHE_RAM_ATTR ProcessRFPacket(SX12xxDriverCommon::rx_status const status)
 
     OTA_Packet_s * const otaPktPtr = (OTA_Packet_s * const)Radio.RXdataBuffer;
     
-    // if(OtaIsFullRes)
-    //     CRCvalue = otaPktPtr->full.crc;
-    // else 
-    //     CRCvalue = otaPktPtr->std.crcLow | otaPktPtr->std.crcHigh;
+    if(OtaIsFullRes)
+        CRCvalue = otaPktPtr->full.crc;
+    else 
+        CRCvalue = otaPktPtr->std.crcLow | otaPktPtr->std.crcHigh;
 
     if (!OtaValidatePacketCrc(otaPktPtr))
     {
@@ -892,11 +892,11 @@ bool ICACHE_RAM_ATTR ProcessRFPacket(SX12xxDriverCommon::rx_status const status)
     #endif /* RADIO_SX127X */
     }
 
-    // // Received a packet, that's the definition of LQ
-    // LQCalc.add();
-    // // Extend sync duration since we've received a packet at this rate
-    // // but do not extend it indefinitely
-    // RFmodeCycleMultiplier = RFmodeCycleMultiplierSlow;
+    // Received a packet, that's the definition of LQ
+    LQCalc.add();
+    // Extend sync duration since we've received a packet at this rate
+    // but do not extend it indefinitely
+    RFmodeCycleMultiplier = RFmodeCycleMultiplierSlow;
 
 #if defined(DEBUG_RX_SCOREBOARD)
     if (otaPktPtr->std.type != PACKET_TYPE_SYNC) DBGW(connectionHasModelMatch ? 'R' : 'r');
@@ -911,10 +911,10 @@ bool ICACHE_RAM_ATTR RXdoneISR(SX12xxDriverCommon::rx_status const status) // EL
     RxISRtime = micros();
     // Serial.println("RXdoneISR " + String(RxISRtime));
 
-    // if (LQCalc.currentIsSet() && connectionState == connected)
-    // {
-    //     return false; // Already received a packet, do not run ProcessRFPacket() again.
-    // }
+    if (LQCalc.currentIsSet() && connectionState == connected)
+    {
+        return false; // Already received a packet, do not run ProcessRFPacket() again.
+    }
 
     if (ProcessRFPacket(status))
     {
@@ -1295,9 +1295,13 @@ void TimerHandler()
         fullRfreq = fullRcount;
         fullRcount = 0;
     }
-    if(connectionState != connected || InBindingMode)
+    if(connectionState != connected)
     {
         digitalToggle(PC13);
+    }
+    else
+    {
+        digitalWrite(PC13, LOW);
     }
     timercount++;
 }
@@ -1432,12 +1436,6 @@ void loop() // ELRS移植，注释源码另起修改
     // {
     //     return;
     // }
-    if(fullRfreq > 150)
-    {
-        digitalWrite(PC13, LOW);
-        // connectionState = connected;
-        // RXtimerState = tim_locked;
-    }
     // else if(connectionState != disconnected && slack / ExpressLRS_currAirRate_Modparams->interval > 5)
     // {
     //     connectionState = disconnected;

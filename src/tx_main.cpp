@@ -67,7 +67,7 @@ volatile uint32_t LastTLMpacketRecvMillis = 0;
 // uint32_t TLMpacketReported = 0;
 // static bool commitInProgress = false;
 
-// LQCALC<25> LQCalc;
+LQCALC<25> LQCalc;
 
 volatile bool busyTransmitting;
 // static volatile bool ModelUpdatePending;
@@ -168,7 +168,7 @@ bool ICACHE_RAM_ATTR ProcessTLMpacket(SX12xxDriverCommon::rx_status const status
   }
 
   LastTLMpacketRecvMillis = millis();
-  // LQCalc.add();
+  LQCalc.add();
   //
   // Radio.GetLastPacketStats();
   // CRSF::LinkStatistics.downlink_SNR = SNR_DESCALE(Radio.LastPacketSNRRaw);
@@ -561,7 +561,7 @@ void ICACHE_RAM_ATTR HWtimerCallbackTock() // ELRS移植，注释源码另起修
 #else
     // CRSF::LinkStatistics.downlink_Link_quality = LQCalc.getLQ();
 #endif
-    // LQCalc.inc();
+    LQCalc.inc();
     return;
   }
   // else if (TelemetryRcvPhase == ttrpExpectingTelem && !LQCalc.currentIsSet())
@@ -579,10 +579,10 @@ bool ICACHE_RAM_ATTR RXdoneISR(SX12xxDriverCommon::rx_status const status) // EL
 {
   fullRcount++;
 
-  // if (LQCalc.currentIsSet())
-  // {
-  //   return false; // Already received tlm, do not run ProcessTLMpacket() again.
-  // }
+  if (LQCalc.currentIsSet())
+  {
+    return false; // Already received tlm, do not run ProcessTLMpacket() again.
+  }
 
   bool packetSuccessful = ProcessTLMpacket(status);
 #if defined(Regulatory_Domain_EU_CE_2400)
@@ -673,7 +673,7 @@ static void EnterBindingMode() // ELRS移植，注释源码另起修改
 
   // Disable the TX timer and wait for any TX to complete
   hwTimer::stop();
-  while (busyTransmitting);
+  // while (busyTransmitting);
 
   // Queue up sending the Master UID as MSP packets
   SendUIDOverMSP();
@@ -930,11 +930,16 @@ void TimerHandler()
     fullRfreq = fullRcount;
     fullRcount = 0;
   }
-  if(fullRfreq < 130)
-    digitalToggle(PC13);
-  else
-    digitalWrite(PC13, LOW);
   timercount++;
+
+  if(connectionState == connected)
+  {
+    digitalWrite(PC13, LOW);
+  }
+  else
+  {
+    digitalToggle(PC13);
+  }
 }
 
 void setupBasicHardWare(void)
