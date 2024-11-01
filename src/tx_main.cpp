@@ -674,7 +674,7 @@ static void EnterBindingMode() // ELRS移植，注释源码另起修改
 
   // Disable the TX timer and wait for any TX to complete
   hwTimer::stop();
-  while (busyTransmitting);
+  // while (busyTransmitting);
 
   // Queue up sending the Master UID as MSP packets
   SendUIDOverMSP();
@@ -886,11 +886,15 @@ void displayDebugInfo()
         display.println("Recv");
         display.setCursor(30, 24);
         display.println(validReceiveFreq);  
-        // full Recv freq
-        display.setCursor(54, 24);
-        display.println("FullR");
-        display.setCursor(92, 24);
-        display.println(fullRfreq);
+        // // full Recv freq
+        // display.setCursor(54, 24);
+        // display.println("FullR");
+        // display.setCursor(92, 24);
+        // display.println(fullRfreq);
+        display.setCursor(54, 24);     
+        display.println("RSSI");     
+        display.setCursor(84, 24);           
+        display.println(Radio.GetRssiInst(SX12XX_Radio_All)); 
     }
     // Freq
     display.setCursor(0, 8);
@@ -915,6 +919,7 @@ void handleButtonPress(void)
         delay(25);
         EnterBindingMode();
     }
+
 }
 
 void TimerHandler()
@@ -999,8 +1004,8 @@ void loop()
 {
   uint32_t now = millis();
 
-  displayDebugInfo();
-  
+  // displayDebugInfo();
+
   HandleUARTout();
 
   HandleUARTin();

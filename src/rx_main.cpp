@@ -1395,7 +1395,7 @@ void setup()
 
 void loop() // ELRS移植，注释源码另起修改
 {    
-    displayDebugInfo();
+    // displayDebugInfo();
 
     HandleUARTin();
 
