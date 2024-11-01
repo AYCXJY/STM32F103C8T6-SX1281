@@ -90,10 +90,10 @@ StubbornSender MspSender;
 
 /* User variable */
 
-// #define OLED_RESET 4
-// #define SCREEN_WIDTH 128
-// #define SCREEN_HEIGHT 64
-// Adafruit_SSD1306 display(OLED_RESET);
+#define OLED_RESET 4
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+Adafruit_SSD1306 display(OLED_RESET);
 
 #define AIRRATE RATE_LORA_333HZ_8CH
 #define BUADRATE 9600
@@ -200,6 +200,7 @@ bool ICACHE_RAM_ATTR ProcessTLMpacket(SX12xxDriverCommon::rx_status const status
       dataLen = sizeof(ota8->tlm_dl.payload);
     }
     // //DBGLN("pi=%u len=%u", ota8->tlm_dl.packageIndex, dataLen);
+    validReceiveCount++;
     TelemetryReceiver.ReceiveData(ota8->tlm_dl.packageIndex & ELRS8_TELEMETRY_MAX_PACKAGES, telemPtr, dataLen);
   }
   // Std res mode
@@ -448,7 +449,7 @@ void ICACHE_RAM_ATTR SendRCdataToRF() // ELRS移植，注释源码另起修改
         // if (config.GetLinkMode() == TX_MAVLINK_MODE)
         //   otaPkt.std.msp_ul.tlmFlag = TelemetryReceiver.GetCurrentConfirm();
       }
-
+      validSendCount++;
       // // send channel data next so the channel messages also get sent during msp transmissions
       // NextPacketIsMspData = false;
       // counter can be increased even for normal msp messages since it's reset if a real bind message should be sent
@@ -849,60 +850,60 @@ static void setupBindingFromConfig() // ELRS移植，注释源码另起修改
 
 /* User Function */
 
-// void displayDebugInfo()
-// {
-//     display.clearDisplay();
-//     if (InBindingMode)
-//     {
-//         display.setCursor(0, 0);
-//         display.println("sending UID...");
-//     }
-//     else
-//     {
-//         // UID
-//         display.setCursor(0, 0);
-//         display.println("ID");
-//         display.setCursor(18, 0);
-//         display.println(UID[2]);
-//         display.setCursor(42, 0);
-//         display.println(UID[3]);
-//         display.setCursor(66, 0);
-//         display.println(UID[4]);
-//         display.setCursor(90, 0);
-//         display.println(UID[5]);
-//         // send freq
-//         display.setCursor(0, 16);
-//         display.println("Send");
-//         display.setCursor(30, 16);
-//         display.println(validSendFreq);
-//         // full Send freq
-//         display.setCursor(54, 16);
-//         display.println("FullS");
-//         display.setCursor(92, 16);
-//         display.println(fullSfreq); 
-//         // receive freq
-//         display.setCursor(0, 24);
-//         display.println("Recv");
-//         display.setCursor(30, 24);
-//         display.println(validReceiveFreq);  
-//         // full Recv freq
-//         display.setCursor(54, 24);
-//         display.println("FullR");
-//         display.setCursor(92, 24);
-//         display.println(fullRfreq);
-//     }
-//     // Freq
-//     display.setCursor(0, 8);
-//     display.println("FQ");
-//     display.setCursor(18, 8);
-//     display.println(Radio.currFreq);
-//     // Channel
-//     display.setCursor(76, 8);
-//     display.println("CH");
-//     display.setCursor(94, 8);
-//     display.println(FHSSgetCurrIndex());
-//     display.display();
-// }
+void displayDebugInfo()
+{
+    display.clearDisplay();
+    if (InBindingMode)
+    {
+        display.setCursor(0, 0);
+        display.println("sending UID...");
+    }
+    else
+    {
+        // UID
+        display.setCursor(0, 0);
+        display.println("ID");
+        display.setCursor(18, 0);
+        display.println(UID[2]);
+        display.setCursor(42, 0);
+        display.println(UID[3]);
+        display.setCursor(66, 0);
+        display.println(UID[4]);
+        display.setCursor(90, 0);
+        display.println(UID[5]);
+        // send freq
+        display.setCursor(0, 16);
+        display.println("Send");
+        display.setCursor(30, 16);
+        display.println(validSendFreq);
+        // full Send freq
+        display.setCursor(54, 16);
+        display.println("FullS");
+        display.setCursor(92, 16);
+        display.println(fullSfreq); 
+        // receive freq
+        display.setCursor(0, 24);
+        display.println("Recv");
+        display.setCursor(30, 24);
+        display.println(validReceiveFreq);  
+        // full Recv freq
+        display.setCursor(54, 24);
+        display.println("FullR");
+        display.setCursor(92, 24);
+        display.println(fullRfreq);
+    }
+    // Freq
+    display.setCursor(0, 8);
+    display.println("FQ");
+    display.setCursor(18, 8);
+    display.println(Radio.currFreq);
+    // Channel
+    display.setCursor(76, 8);
+    display.println("CH");
+    display.setCursor(94, 8);
+    display.println(FHSSgetCurrIndex());
+    display.display();
+}
 
 void handleButtonPress(void)
 {
@@ -929,6 +930,9 @@ void TimerHandler()
     fullScount = 0;
     fullRfreq = fullRcount;
     fullRcount = 0;
+
+    // uint8_t buf[140] = {"HELLOWORLDHELLOWORLDHELLOWORLDHELLOWORLDHELLOWORLDHELLOWORLDHELLOWORLDHELLOWORLDHELLOWORLDHELLOWORLDHELLOWORLDHELLOWORLDHELLOWORLDHELLOW\r\n"};
+    // apInputBuffer.pushBytes(buf, sizeof(buf));
   }
   if(fullRfreq < 130)
     digitalToggle(PC13);
@@ -947,15 +951,15 @@ void setupBasicHardWare(void)
     // Button
     pinMode(PB1, INPUT_PULLUP);
     attachInterrupt(digitalPinToInterrupt(PB1), handleButtonPress, FALLING);
-    // // OLED
-    // Wire.setSCL(PB8);
-    // Wire.setSDA(PB9);
-    // Wire.begin();
-    // display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
-    // display.setTextSize(1);
-    // display.setTextColor(WHITE);
-    // display.clearDisplay();
-    // display.display();
+    // OLED
+    Wire.setSCL(PB8);
+    Wire.setSDA(PB9);
+    Wire.begin();
+    display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+    display.setTextSize(1);
+    display.setTextColor(WHITE);
+    display.clearDisplay();
+    display.display();
     // sx1280 GPIO
     pinMode(GPIO_PIN_TX_EN, OUTPUT);
     pinMode(GPIO_PIN_RX_EN, OUTPUT);
@@ -995,6 +999,8 @@ void loop()
 {
   uint32_t now = millis();
 
+  displayDebugInfo();
+  
   HandleUARTout();
 
   HandleUARTin();
