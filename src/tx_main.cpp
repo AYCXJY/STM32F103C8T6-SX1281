@@ -998,6 +998,8 @@ void setup()
   hwTimer::resume();
 
   ExpressLRS_currTlmDenom = 2;
+
+  Radio.SetOutputPower(SX1280_POWER_MAX);
 }
 
 void loop()

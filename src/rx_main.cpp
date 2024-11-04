@@ -1384,6 +1384,8 @@ void setup()
     RFmodeLastCycled = millis();
 
     ExpressLRS_currTlmDenom = 2;
+
+    Radio.SetOutputPower(SX1280_POWER_MAX);
 }
 
 void loop() // ELRS移植，注释源码另起修改
