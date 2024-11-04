@@ -148,7 +148,7 @@ uint32_t slack;
 FIFO<AP_MAX_BUF_LEN> apInputBuffer;
 FIFO<AP_MAX_BUF_LEN> apOutputBuffer;
 
-#define PACKETSIZE 186
+#define PACKETSIZE 255
 uint8_t StubbornSenderBuffer[PACKETSIZE];
 uint8_t StubbornReceiverBuffer[PACKETSIZE];
 
@@ -273,17 +273,17 @@ bool ICACHE_RAM_ATTR HandleFHSS() // ELRS移植，注释源码另起修改
     return true;
 }
 
-void ICACHE_RAM_ATTR LinkStatsToOta(OTA_LinkStats_s * const ls)
-{
-    // The value in linkstatistics is "positivized" (inverted polarity)
-    // and must be inverted on the TX side. Positive values are used
-    // so save a bit to encode which antenna is in use
-    // ls->uplink_RSSI_1 = CRSF::LinkStatistics.uplink_RSSI_1;
-    // ls->uplink_RSSI_2 = CRSF::LinkStatistics.uplink_RSSI_2;
-    // ls->antenna = antenna;
-    // ls->modelMatch = connectionHasModelMatch;
-    // ls->lq = CRSF::LinkStatistics.uplink_Link_quality;
-    ls->mspConfirm = MspReceiver.GetCurrentConfirm() ? 1 : 0;
+// void ICACHE_RAM_ATTR LinkStatsToOta(OTA_LinkStats_s * const ls)
+// {
+//     The value in linkstatistics is "positivized" (inverted polarity)
+//     and must be inverted on the TX side. Positive values are used
+//     so save a bit to encode which antenna is in use
+//     ls->uplink_RSSI_1 = CRSF::LinkStatistics.uplink_RSSI_1;
+//     ls->uplink_RSSI_2 = CRSF::LinkStatistics.uplink_RSSI_2;
+//     ls->antenna = antenna;
+//     ls->modelMatch = connectionHasModelMatch;
+//     ls->lq = CRSF::LinkStatistics.uplink_Link_quality;
+//     ls->mspConfirm = MspReceiver.GetCurrentConfirm() ? 1 : 0;
 // #if defined(DEBUG_FREQ_CORRECTION)
 //     ls->SNR = FreqCorrection * 127 / FreqCorrectionMax;
 // #else
@@ -296,9 +296,9 @@ void ICACHE_RAM_ATTR LinkStatsToOta(OTA_LinkStats_s * const ls)
 //         ls->SNR = SnrMean.previousMean();
 //     }
 // #endif
-}
+// }
 
-bool ICACHE_RAM_ATTR HandleSendTelemetryResponse() // ELRS移植，注释源码另起修改
+bool ICACHE_RAM_ATTR HandleSendTelemetryResponse() // 逻辑修改，去除链路质量回传
 {
     uint8_t modresult = (OtaNonce + 1) % ExpressLRS_currTlmDenom;
 
@@ -317,30 +317,30 @@ bool ICACHE_RAM_ATTR HandleSendTelemetryResponse() // ELRS移植，注释源码�
     // bool noTlmQueued = !TelemetrySender.IsActive() && noAirportDataQueued;
 
     // if (NextTelemetryType == ELRS_TELEMETRY_TYPE_LINK || noTlmQueued)
-    {
-        OTA_LinkStats_s * ls;
-        if (OtaIsFullRes)
-        {
-            otaPkt.full.tlm_dl.containsLinkStats = 1;
-            ls = &otaPkt.full.tlm_dl.ul_link_stats.stats;
-            // // Include some advanced telemetry in the extra space
-            // // Note the use of `ul_link_stats.payload` vs just `payload`
-            otaPkt.full.tlm_dl.packageIndex = TelemetrySender.GetCurrentPayload(
-                otaPkt.full.tlm_dl.ul_link_stats.payload,
-                sizeof(otaPkt.full.tlm_dl.ul_link_stats.payload));
-        }
-        else
-        {
-            otaPkt.std.tlm_dl.type = ELRS_TELEMETRY_TYPE_LINK;
-            ls = &otaPkt.std.tlm_dl.ul_link_stats.stats;
-        }
-        LinkStatsToOta(ls);
+    // {
+    //     OTA_LinkStats_s * ls;
+    //     if (OtaIsFullRes)
+    //     {
+    //         otaPkt.full.tlm_dl.containsLinkStats = 1;
+    //         ls = &otaPkt.full.tlm_dl.ul_link_stats.stats;
+    //         // // Include some advanced telemetry in the extra space
+    //         // // Note the use of `ul_link_stats.payload` vs just `payload`
+    //         otaPkt.full.tlm_dl.packageIndex = TelemetrySender.GetCurrentPayload(
+    //             otaPkt.full.tlm_dl.ul_link_stats.payload,
+    //             sizeof(otaPkt.full.tlm_dl.ul_link_stats.payload));
+    //     }
+    //     else
+    //     {
+    //         otaPkt.std.tlm_dl.type = ELRS_TELEMETRY_TYPE_LINK;
+    //         ls = &otaPkt.std.tlm_dl.ul_link_stats.stats;
+    //     }
+    //     LinkStatsToOta(ls);
 
-        // NextTelemetryType = ELRS_TELEMETRY_TYPE_DATA;
-        // // Start the count at 1 because the next will be DATA and doing +1 before checking
-        // // against Max below is for some reason 10 bytes more code
-        // telemetryBurstCount = 1;
-    }
+    //     NextTelemetryType = ELRS_TELEMETRY_TYPE_DATA;
+    //     // Start the count at 1 because the next will be DATA and doing +1 before checking
+    //     // against Max below is for some reason 10 bytes more code
+    //     telemetryBurstCount = 1;
+    // }
     // else
     {
         // if (telemetryBurstCount < telemetryBurstMax)
@@ -352,22 +352,24 @@ bool ICACHE_RAM_ATTR HandleSendTelemetryResponse() // ELRS移植，注释源码�
         //     NextTelemetryType = ELRS_TELEMETRY_TYPE_LINK;
         // }
 
-        // if (TelemetrySender.IsActive())
-        // {
-        //     if (OtaIsFullRes)
-        //     {
-        //         otaPkt.full.tlm_dl.packageIndex = TelemetrySender.GetCurrentPayload(
-        //             otaPkt.full.tlm_dl.payload,
-        //             sizeof(otaPkt.full.tlm_dl.payload));
-        //     }
-        //     else
-        //     {
-        //         otaPkt.std.tlm_dl.type = ELRS_TELEMETRY_TYPE_DATA;
-        //         otaPkt.std.tlm_dl.packageIndex = TelemetrySender.GetCurrentPayload(
-        //             otaPkt.std.tlm_dl.payload,
-        //             sizeof(otaPkt.std.tlm_dl.payload));
-        //     }
-        // }
+        if (TelemetrySender.IsActive())
+        {
+            if (OtaIsFullRes)
+            {
+                otaPkt.full.tlm_dl.packageIndex = TelemetrySender.GetCurrentPayload(
+                    otaPkt.full.tlm_dl.payload,
+                    sizeof(otaPkt.full.tlm_dl.payload));
+
+            }
+            // else
+            // {
+            //     otaPkt.std.tlm_dl.type = ELRS_TELEMETRY_TYPE_DATA;
+            //     otaPkt.std.tlm_dl.packageIndex = TelemetrySender.GetCurrentPayload(
+            //         otaPkt.std.tlm_dl.payload,
+            //         sizeof(otaPkt.std.tlm_dl.payload));
+            // }
+        }
+        otaPkt.full.tlm_dl.containsLinkStats = MspReceiver.GetCurrentConfirm() ? 1 : 0;
         // if(apInputBuffer.size())
         // // else if (firmwareOptions.is_airport)
         // {
@@ -711,28 +713,28 @@ static void ICACHE_RAM_ATTR ProcessRfPacket_MSP(OTA_Packet_s const * const otaPk
             packageIndex &= ELRS8_TELEMETRY_MAX_PACKAGES;
         }
     }
-    else
-    {
-        packageIndex = otaPktPtr->std.msp_ul.packageIndex;
-        payload = otaPktPtr->std.msp_ul.payload;
-        dataLen = sizeof(otaPktPtr->std.msp_ul.payload);
-        // // User code--show ota msp data
-        // Serial.print("recieved data: ");
-        // for(int i = 0; i < dataLen; i++)
-        // {
-        //     Serial.print((char)*(payload + i));
-        // }
-        // Serial.println("");
+    // else
+    // {
+    //     packageIndex = otaPktPtr->std.msp_ul.packageIndex;
+    //     payload = otaPktPtr->std.msp_ul.payload;
+    //     dataLen = sizeof(otaPktPtr->std.msp_ul.payload);
+    //     // User code--show ota msp data
+    //     Serial.print("recieved data: ");
+    //     for(int i = 0; i < dataLen; i++)
+    //     {
+    //         Serial.print((char)*(payload + i));
+    //     }
+    //     Serial.println("");
 
-        // if (config.GetSerialProtocol() == PROTOCOL_MAVLINK)
-        // {
-        //     TelemetrySender.ConfirmCurrentPayload(otaPktPtr->std.msp_ul.tlmFlag);
-        // }
-        // else
-        {
-            packageIndex &= ELRS4_TELEMETRY_MAX_PACKAGES;
-        }
-    }
+    //     if (config.GetSerialProtocol() == PROTOCOL_MAVLINK)
+    //     {
+    //         TelemetrySender.ConfirmCurrentPayload(otaPktPtr->std.msp_ul.tlmFlag);
+    //     }
+    //     else
+    //     {
+    //         packageIndex &= ELRS4_TELEMETRY_MAX_PACKAGES;
+    //     }
+    // }
 
     // Always examine MSP packets for bind information if in bind mode
     // [1] is the package index, first packet of the MSP

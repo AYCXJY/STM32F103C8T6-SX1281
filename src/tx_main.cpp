@@ -107,37 +107,37 @@ STM32Timer ITimer(TIM2);
 
 uint8_t CRCvalue;
 
-#define PACKETSIZE 186
+#define PACKETSIZE 255
 uint8_t StubbornSenderBuffer[PACKETSIZE];
 uint8_t StubbornReceiverBuffer[PACKETSIZE];
 
 /* ELRS Function*/
 
-void ICACHE_RAM_ATTR LinkStatsFromOta(OTA_LinkStats_s * const ls) // ELRS移植，注释源码另起修改
-{
-  // int8_t snrScaled = ls->SNR;
-  // DynamicPower_TelemetryUpdate(snrScaled);
+// void ICACHE_RAM_ATTR LinkStatsFromOta(OTA_LinkStats_s * const ls) // ELRS移植，注释源码另起修改
+// {
+//   int8_t snrScaled = ls->SNR;
+//   DynamicPower_TelemetryUpdate(snrScaled);
 
-  // // Antenna is the high bit in the RSSI_1 value
-  // // RSSI received is signed, inverted polarity (positive value = -dBm)
-  // // OpenTX's value is signed and will display +dBm and -dBm properly
-  // CRSF::LinkStatistics.uplink_RSSI_1 = -(ls->uplink_RSSI_1);
-  // CRSF::LinkStatistics.uplink_RSSI_2 = -(ls->uplink_RSSI_2);
-  // CRSF::LinkStatistics.uplink_Link_quality = ls->lq;
+//   // Antenna is the high bit in the RSSI_1 value
+//   // RSSI received is signed, inverted polarity (positive value = -dBm)
+//   // OpenTX's value is signed and will display +dBm and -dBm properly
+//   CRSF::LinkStatistics.uplink_RSSI_1 = -(ls->uplink_RSSI_1);
+//   CRSF::LinkStatistics.uplink_RSSI_2 = -(ls->uplink_RSSI_2);
+//   CRSF::LinkStatistics.uplink_Link_quality = ls->lq;
 // #if defined(DEBUG_FREQ_CORRECTION)
 //   // Don't descale the FreqCorrection value being send in SNR
 //   CRSF::LinkStatistics.uplink_SNR = snrScaled;
 // #else
 //   CRSF::LinkStatistics.uplink_SNR = SNR_DESCALE(snrScaled);
 // #endif
-  // CRSF::LinkStatistics.active_antenna = ls->antenna;
-  // connectionHasModelMatch = ls->modelMatch;
-  // -- downlink_SNR / downlink_RSSI is updated for any packet received, not just Linkstats
-  // -- uplink_TX_Power is updated when sending to the handset, so it updates when missing telemetry
-  // -- rf_mode is updated when we change rates
-  // -- downlink_Link_quality is updated before the LQ period is incremented
-  MspSender.ConfirmCurrentPayload(ls->mspConfirm);
-}
+//   CRSF::LinkStatistics.active_antenna = ls->antenna;
+//   connectionHasModelMatch = ls->modelMatch;
+//   -- downlink_SNR / downlink_RSSI is updated for any packet received, not just Linkstats
+//   -- uplink_TX_Power is updated when sending to the handset, so it updates when missing telemetry
+//   -- rf_mode is updated when we change rates
+//   -- downlink_Link_quality is updated before the LQ period is incremented
+//   MspSender.ConfirmCurrentPayload(ls->mspConfirm);
+// }
 
 bool ICACHE_RAM_ATTR ProcessTLMpacket(SX12xxDriverCommon::rx_status const status) // ELRS移植，注释源码另起修改
 {
@@ -177,13 +177,13 @@ bool ICACHE_RAM_ATTR ProcessTLMpacket(SX12xxDriverCommon::rx_status const status
     OTA_Packet8_s * const ota8 = (OTA_Packet8_s * const)otaPktPtr;
     uint8_t *telemPtr;
     uint8_t dataLen;
-    if (ota8->tlm_dl.containsLinkStats)
-    {
-      LinkStatsFromOta(&ota8->tlm_dl.ul_link_stats.stats);
-      telemPtr = ota8->tlm_dl.ul_link_stats.payload;
-      dataLen = sizeof(ota8->tlm_dl.ul_link_stats.payload);
-    }
-    else
+    // if (ota8->tlm_dl.containsLinkStats)
+    // {
+    //   LinkStatsFromOta(&ota8->tlm_dl.ul_link_stats.stats);
+    //   telemPtr = ota8->tlm_dl.ul_link_stats.payload;
+    //   dataLen = sizeof(ota8->tlm_dl.ul_link_stats.payload);
+    // }
+    // else
     {
       // if(otaPktPtr->full.airport.count)
       // // if (firmwareOptions.is_airport)
@@ -192,6 +192,7 @@ bool ICACHE_RAM_ATTR ProcessTLMpacket(SX12xxDriverCommon::rx_status const status
       //   OtaUnpackAirportData(otaPktPtr, &apOutputBuffer);
       //   return true;
       // }
+      MspSender.ConfirmCurrentPayload(ota8->tlm_dl.containsLinkStats);
       telemPtr = ota8->tlm_dl.payload;
       dataLen = sizeof(ota8->tlm_dl.payload);
     }
@@ -199,29 +200,29 @@ bool ICACHE_RAM_ATTR ProcessTLMpacket(SX12xxDriverCommon::rx_status const status
     validReceiveCount++;
     TelemetryReceiver.ReceiveData(ota8->tlm_dl.packageIndex & ELRS8_TELEMETRY_MAX_PACKAGES, telemPtr, dataLen);
   }
-  // Std res mode
-  else
-  {
-    switch (otaPktPtr->std.tlm_dl.type)
-    {
-      // case ELRS_TELEMETRY_TYPE_LINK:
-      //   LinkStatsFromOta(&otaPktPtr->std.tlm_dl.ul_link_stats.stats);
-      //   break;
+  // // Std res mode
+  // else
+  // {
+  //   switch (otaPktPtr->std.tlm_dl.type)
+  //   {
+  //     case ELRS_TELEMETRY_TYPE_LINK:
+  //       LinkStatsFromOta(&otaPktPtr->std.tlm_dl.ul_link_stats.stats);
+  //       break;
 
-      // case ELRS_TELEMETRY_TYPE_DATA:
-      //   if(otaPktPtr->std.airport.count)
-      //   // if (firmwareOptions.is_airport)
-      //   {
-      //     validReceiveCount++;
-      //     OtaUnpackAirportData(otaPktPtr, &apOutputBuffer);
-      //     return true;
-      //   }
-      //   // TelemetryReceiver.ReceiveData(otaPktPtr->std.tlm_dl.packageIndex & ELRS4_TELEMETRY_MAX_PACKAGES,
-      //   //   otaPktPtr->std.tlm_dl.payload,
-      //   //   sizeof(otaPktPtr->std.tlm_dl.payload));
-      //   break;
-    }
-  }
+  //     case ELRS_TELEMETRY_TYPE_DATA:
+  //       if(otaPktPtr->std.airport.count)
+  //       // if (firmwareOptions.is_airport)
+  //       {
+  //         validReceiveCount++;
+  //         OtaUnpackAirportData(otaPktPtr, &apOutputBuffer);
+  //         return true;
+  //       }
+  //       // TelemetryReceiver.ReceiveData(otaPktPtr->std.tlm_dl.packageIndex & ELRS4_TELEMETRY_MAX_PACKAGES,
+  //       //   otaPktPtr->std.tlm_dl.payload,
+  //       //   sizeof(otaPktPtr->std.tlm_dl.payload));
+  //       break;
+  //   }
+  // }
 
   return true;
 }
@@ -438,14 +439,14 @@ void ICACHE_RAM_ATTR SendRCdataToRF() // ELRS移植，注释源码另起修改
         // if (config.GetLinkMode() == TX_MAVLINK_MODE)
           otaPkt.full.msp_ul.tlmFlag = TelemetryReceiver.GetCurrentConfirm();
       }
-      else
-      {
-        otaPkt.std.msp_ul.packageIndex = MspSender.GetCurrentPayload(
-          otaPkt.std.msp_ul.payload,
-          sizeof(otaPkt.std.msp_ul.payload));
-        // if (config.GetLinkMode() == TX_MAVLINK_MODE)
-        //   otaPkt.std.msp_ul.tlmFlag = TelemetryReceiver.GetCurrentConfirm();
-      }
+      // else
+      // {
+      //   otaPkt.std.msp_ul.packageIndex = MspSender.GetCurrentPayload(
+      //     otaPkt.std.msp_ul.payload,
+      //     sizeof(otaPkt.std.msp_ul.payload));
+      //   if (config.GetLinkMode() == TX_MAVLINK_MODE)
+      //     otaPkt.std.msp_ul.tlmFlag = TelemetryReceiver.GetCurrentConfirm();
+      // }
       validSendCount++;
       // // send channel data next so the channel messages also get sent during msp transmissions
       // NextPacketIsMspData = false;
