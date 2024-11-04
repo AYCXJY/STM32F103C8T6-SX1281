@@ -107,8 +107,9 @@ STM32Timer ITimer(TIM2);
 
 uint8_t CRCvalue;
 
-uint8_t StubbornSenderBuffer[140];
-uint8_t StubbornReceiverBuffer[140];
+#define PACKETSIZE 186
+uint8_t StubbornSenderBuffer[PACKETSIZE];
+uint8_t StubbornReceiverBuffer[PACKETSIZE];
 
 /* ELRS Function*/
 
@@ -318,7 +319,8 @@ void SetRFLinkRate(uint8_t index) // ELRS移植，注释源码另起修改
 
     OtaUpdateSerializers(smWideOr8ch, ModParams->PayloadLength);
     // OtaUpdateSerializers(newSwitchMode, ModParams->PayloadLength);
-    MspSender.setMaxPackageIndex(ELRS_MSP_MAX_PACKAGES);
+    MspSender.setMaxPackageIndex(31);
+    // MspSender.setMaxPackageIndex(ELRS_MSP_MAX_PACKAGES);
     TelemetryReceiver.setMaxPackageIndex(OtaIsFullRes ? ELRS8_TELEMETRY_MAX_PACKAGES : ELRS4_TELEMETRY_MAX_PACKAGES);
 
     ExpressLRS_currAirRate_Modparams = ModParams;
@@ -1023,7 +1025,7 @@ void loop()
   if (TelemetryReceiver.HasFinishedData())
   {
       apOutputBuffer.lock();
-      apOutputBuffer.atomicPushBytes(StubbornReceiverBuffer, 140);
+      apOutputBuffer.atomicPushBytes(StubbornReceiverBuffer, PACKETSIZE);
       apOutputBuffer.unlock();
       TelemetryReceiver.Unlock();
   }
@@ -1038,12 +1040,12 @@ void loop()
   else if (!MspSender.IsActive())
   {
     auto size = apInputBuffer.size();
-    if (size >= 140)
+    if (size >= PACKETSIZE)
     {
       apInputBuffer.lock();
-      apInputBuffer.popBytes(StubbornSenderBuffer, 140);
+      apInputBuffer.popBytes(StubbornSenderBuffer, PACKETSIZE);
       apInputBuffer.unlock();
-      MspSender.SetDataToTransmit(StubbornSenderBuffer, 140);
+      MspSender.SetDataToTransmit(StubbornSenderBuffer, PACKETSIZE);
     }
   }
 }

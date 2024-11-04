@@ -67,8 +67,7 @@ StubbornSender TelemetrySender;
 // static uint8_t telemetryBurstMax;
 
 StubbornReceiver MspReceiver;
-uint8_t MspData[140];
-// uint8_t MspData[ELRS_MSP_BUFFER];
+uint8_t MspData[ELRS_MSP_BUFFER];
 
 // uint8_t mavlinkSSBuffer[CRSF_MAX_PACKET_LEN]; // Buffer for current stubbon sender packet (mavlink only)
 
@@ -149,7 +148,9 @@ uint32_t slack;
 FIFO<AP_MAX_BUF_LEN> apInputBuffer;
 FIFO<AP_MAX_BUF_LEN> apOutputBuffer;
 
-uint8_t StubbornSenderBuffer[140];
+#define PACKETSIZE 186
+uint8_t StubbornSenderBuffer[PACKETSIZE];
+uint8_t StubbornReceiverBuffer[PACKETSIZE];
 
 /* ELRS Function*/
 
@@ -215,7 +216,7 @@ void SetRFLinkRate(uint8_t index, bool bindMode) // ELRS移植，注释源码另
     // }
 
     OtaUpdateSerializers(smWideOr8ch, ModParams->PayloadLength);
-    MspReceiver.setMaxPackageIndex(ELRS_MSP_MAX_PACKAGES);
+    MspReceiver.setMaxPackageIndex(31);
     TelemetrySender.setMaxPackageIndex(OtaIsFullRes ? ELRS8_TELEMETRY_MAX_PACKAGES : ELRS4_TELEMETRY_MAX_PACKAGES);
 
     // // Wait for (11/10) 110% of time it takes to cycle through all freqs in FHSS table (in ms)
@@ -1372,7 +1373,7 @@ void setup()
 
     if (connectionState != radioFailed)
     {
-        MspReceiver.SetDataToReceive(MspData, 140);
+        MspReceiver.SetDataToReceive(StubbornReceiverBuffer, PACKETSIZE);
         // MspReceiver.SetDataToReceive(MspData, ELRS_MSP_BUFFER);
         Radio.RXnb();
         hwTimer::init(HWtimerCallbackTick, HWtimerCallbackTock);
@@ -1401,19 +1402,19 @@ void loop() // ELRS移植，注释源码另起修改
     if (MspReceiver.HasFinishedData())
     {
         apOutputBuffer.lock();
-        apOutputBuffer.atomicPushBytes(MspData, 140);
+        apOutputBuffer.atomicPushBytes(StubbornReceiverBuffer, PACKETSIZE);
         apOutputBuffer.unlock();
         MspReceiver.Unlock();
     }
     if (!TelemetrySender.IsActive())
     {
         auto size = apInputBuffer.size();
-        if (size >= 140)
+        if (size >= PACKETSIZE)
         {
             apInputBuffer.lock();
-            apInputBuffer.popBytes(StubbornSenderBuffer, 140);
+            apInputBuffer.popBytes(StubbornSenderBuffer, PACKETSIZE);
             apInputBuffer.unlock();
-            TelemetrySender.SetDataToTransmit(StubbornSenderBuffer, 140);
+            TelemetrySender.SetDataToTransmit(StubbornSenderBuffer, PACKETSIZE);
         }
     }
     // devicesUpdate(now);
