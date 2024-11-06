@@ -1031,7 +1031,7 @@ void loop()
   if (TelemetryReceiver.HasFinishedData())
   {
       apOutputBuffer.lock();
-      apOutputBuffer.atomicPushBytes(StubbornReceiverBuffer, PACKETSIZE);
+      apOutputBuffer.pushBytes(StubbornReceiverBuffer, PACKETSIZE);
       apOutputBuffer.unlock();
       TelemetryReceiver.Unlock();
   }

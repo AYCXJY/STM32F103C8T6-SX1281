@@ -1413,7 +1413,7 @@ void loop() // ELRS移植，注释源码另起修改
     if (MspReceiver.HasFinishedData())
     {
         apOutputBuffer.lock();
-        apOutputBuffer.atomicPushBytes(StubbornReceiverBuffer, PACKETSIZE);
+        apOutputBuffer.pushBytes(StubbornReceiverBuffer, PACKETSIZE);
         apOutputBuffer.unlock();
         MspReceiver.Unlock();
     }
