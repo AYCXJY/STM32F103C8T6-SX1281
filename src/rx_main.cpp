@@ -122,7 +122,8 @@ bool LockRFmode = false;
 Adafruit_SSD1306 display(OLED_RESET);
 
 #define AIRRATE RATE_LORA_333HZ_8CH
-#define BUADRATE 9600
+#define BUADRATE 14400
+bool isAirPort = false;
 
 uint16_t fullScount;
 uint16_t fullSfreq;
@@ -315,7 +316,7 @@ bool ICACHE_RAM_ATTR HandleSendTelemetryResponse() // 逻辑修改，去除链�
 
     // bool noAirportDataQueued = firmwareOptions.is_airport && apOutputBuffer.size() == 0;
     // bool noTlmQueued = !TelemetrySender.IsActive() && noAirportDataQueued;
-
+    //
     // if (NextTelemetryType == ELRS_TELEMETRY_TYPE_LINK || noTlmQueued)
     // {
     //     OTA_LinkStats_s * ls;
@@ -335,7 +336,7 @@ bool ICACHE_RAM_ATTR HandleSendTelemetryResponse() // 逻辑修改，去除链�
     //         ls = &otaPkt.std.tlm_dl.ul_link_stats.stats;
     //     }
     //     LinkStatsToOta(ls);
-
+    //
     //     NextTelemetryType = ELRS_TELEMETRY_TYPE_DATA;
     //     // Start the count at 1 because the next will be DATA and doing +1 before checking
     //     // against Max below is for some reason 10 bytes more code
@@ -351,8 +352,13 @@ bool ICACHE_RAM_ATTR HandleSendTelemetryResponse() // 逻辑修改，去除链�
         // {
         //     NextTelemetryType = ELRS_TELEMETRY_TYPE_LINK;
         // }
-
-        if (TelemetrySender.IsActive())
+        if(isAirPort && apInputBuffer.size())
+        // else if (firmwareOptions.is_airport)
+        {
+            validSendCount++;
+            OtaPackAirportData(&otaPkt, &apInputBuffer);
+        }
+        else if (TelemetrySender.IsActive())
         {
             if (OtaIsFullRes)
             {
@@ -370,12 +376,6 @@ bool ICACHE_RAM_ATTR HandleSendTelemetryResponse() // 逻辑修改，去除链�
             // }
         }
         otaPkt.full.tlm_dl.containsLinkStats = MspReceiver.GetCurrentConfirm() ? 1 : 0;
-        // if(apInputBuffer.size())
-        // // else if (firmwareOptions.is_airport)
-        // {
-        //     validSendCount++;
-        //     OtaPackAirportData(&otaPkt, &apInputBuffer);
-        // }
     }
 
     OtaGeneratePacketCrc(&otaPkt);
@@ -862,11 +862,12 @@ bool ICACHE_RAM_ATTR ProcessRFPacket(SX12xxDriverCommon::rx_status const status)
             && !InBindingMode;
         break;
     case PACKET_TYPE_TLM:
+        if (isAirPort)
         // if (firmwareOptions.is_airport)
-        // {
-        //     validReceiveCount++;
-        //     OtaUnpackAirportData(otaPktPtr, &apOutputBuffer);
-        // }
+        {
+            validReceiveCount++;
+            OtaUnpackAirportData(otaPktPtr, &apOutputBuffer);
+        }
         break;
     default:
         break;

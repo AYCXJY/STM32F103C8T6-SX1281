@@ -91,7 +91,8 @@ StubbornSender MspSender;
 Adafruit_SSD1306 display(OLED_RESET);
 
 #define AIRRATE RATE_LORA_333HZ_8CH
-#define BUADRATE 9600
+#define BUADRATE 14400
+bool isAirPort = false;
 
 uint16_t fullScount;
 uint16_t fullSfreq;
@@ -185,13 +186,13 @@ bool ICACHE_RAM_ATTR ProcessTLMpacket(SX12xxDriverCommon::rx_status const status
     // }
     // else
     {
-      // if(otaPktPtr->full.airport.count)
-      // // if (firmwareOptions.is_airport)
-      // {
-      //   validReceiveCount++;
-      //   OtaUnpackAirportData(otaPktPtr, &apOutputBuffer);
-      //   return true;
-      // }
+      if(isAirPort && otaPktPtr->full.airport.count)
+      // if (firmwareOptions.is_airport)
+      {
+        validReceiveCount++;
+        OtaUnpackAirportData(otaPktPtr, &apOutputBuffer);
+        return true;
+      }
       MspSender.ConfirmCurrentPayload(ota8->tlm_dl.containsLinkStats);
       telemPtr = ota8->tlm_dl.payload;
       dataLen = sizeof(ota8->tlm_dl.payload);
@@ -427,7 +428,11 @@ void ICACHE_RAM_ATTR SendRCdataToRF() // ELRS移植，注释源码另起修改
   // }
   else
   {
-    if (MspSender.IsActive())
+    if(isAirPort && apInputBuffer.size())
+    {
+      OtaPackAirportData(&otaPkt, &apInputBuffer);
+    }
+    else if (MspSender.IsActive())
     // if ((NextPacketIsMspData && MspSender.IsActive()) || dontSendChannelData)
     {
       otaPkt.std.type = PACKET_TYPE_MSPDATA;
