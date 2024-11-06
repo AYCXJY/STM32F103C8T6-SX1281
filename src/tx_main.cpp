@@ -444,14 +444,14 @@ void ICACHE_RAM_ATTR SendRCdataToRF() // ELRS移植，注释源码另起修改
         // if (config.GetLinkMode() == TX_MAVLINK_MODE)
           otaPkt.full.msp_ul.tlmFlag = TelemetryReceiver.GetCurrentConfirm();
       }
-      // else
-      // {
-      //   otaPkt.std.msp_ul.packageIndex = MspSender.GetCurrentPayload(
-      //     otaPkt.std.msp_ul.payload,
-      //     sizeof(otaPkt.std.msp_ul.payload));
-      //   if (config.GetLinkMode() == TX_MAVLINK_MODE)
-      //     otaPkt.std.msp_ul.tlmFlag = TelemetryReceiver.GetCurrentConfirm();
-      // }
+      else
+      {
+        otaPkt.std.msp_ul.packageIndex = MspSender.GetCurrentPayload(
+          otaPkt.std.msp_ul.payload,
+          sizeof(otaPkt.std.msp_ul.payload));
+        // if (config.GetLinkMode() == TX_MAVLINK_MODE)
+          otaPkt.std.msp_ul.tlmFlag = TelemetryReceiver.GetCurrentConfirm();
+      }
       validSendCount++;
       // // send channel data next so the channel messages also get sent during msp transmissions
       // NextPacketIsMspData = false;
@@ -480,7 +480,7 @@ void ICACHE_RAM_ATTR SendRCdataToRF() // ELRS移植，注释源码另起修改
     CRCvalue = otaPkt.full.crc;
   else 
     CRCvalue = otaPkt.std.crcLow | otaPkt.std.crcHigh;
-    
+
   SX12XX_Radio_Number_t transmittingRadio = Radio.GetLastSuccessfulPacketRadio();
 
   // if (isDualRadio())

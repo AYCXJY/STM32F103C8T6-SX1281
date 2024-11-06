@@ -178,6 +178,8 @@ void SetRFLinkRate(uint8_t index, bool bindMode) // ELRS移植，注释源码另
     // Binding always uses invertIQ
     bool invertIQ = bindMode || (UID[5] & 0x01);
 
+    Serial.println("set rate " + String(index));
+
     uint32_t interval = ModParams->interval;
 #if defined(DEBUG_FREQ_CORRECTION) && defined(RADIO_SX128X)
     interval = interval * 12 / 10; // increase the packet interval by 20% to allow adding packet header
@@ -626,6 +628,11 @@ void LostConnection(bool resumeRx) // ELRS移植，注释源码另起修改
             Radio.RXnb();
         }
     }
+    else
+    {
+        SetRFLinkRate(enumRatetoIndex(AIRRATE), false);
+        Radio.RXnb();
+    }
 }
 
 void ICACHE_RAM_ATTR TentativeConnection(unsigned long now) // ELRS移植，注释源码另起修改
@@ -713,28 +720,28 @@ static void ICACHE_RAM_ATTR ProcessRfPacket_MSP(OTA_Packet_s const * const otaPk
             packageIndex &= ELRS8_TELEMETRY_MAX_PACKAGES;
         }
     }
-    // else
-    // {
-    //     packageIndex = otaPktPtr->std.msp_ul.packageIndex;
-    //     payload = otaPktPtr->std.msp_ul.payload;
-    //     dataLen = sizeof(otaPktPtr->std.msp_ul.payload);
-    //     // User code--show ota msp data
-    //     Serial.print("recieved data: ");
-    //     for(int i = 0; i < dataLen; i++)
-    //     {
-    //         Serial.print((char)*(payload + i));
-    //     }
-    //     Serial.println("");
+    else
+    {
+        packageIndex = otaPktPtr->std.msp_ul.packageIndex;
+        payload = otaPktPtr->std.msp_ul.payload;
+        dataLen = sizeof(otaPktPtr->std.msp_ul.payload);
+        // // User code--show ota msp data
+        // Serial.print("recieved data: ");
+        // for(int i = 0; i < dataLen; i++)
+        // {
+        //     Serial.print((char)*(payload + i));
+        // }
+        // Serial.println("");
 
-    //     if (config.GetSerialProtocol() == PROTOCOL_MAVLINK)
-    //     {
-    //         TelemetrySender.ConfirmCurrentPayload(otaPktPtr->std.msp_ul.tlmFlag);
-    //     }
-    //     else
-    //     {
-    //         packageIndex &= ELRS4_TELEMETRY_MAX_PACKAGES;
-    //     }
-    // }
+        // if (config.GetSerialProtocol() == PROTOCOL_MAVLINK)
+        {
+            TelemetrySender.ConfirmCurrentPayload(otaPktPtr->std.msp_ul.tlmFlag);
+        }
+        // else
+        {
+            packageIndex &= ELRS4_TELEMETRY_MAX_PACKAGES;
+        }
+    }
 
     // Always examine MSP packets for bind information if in bind mode
     // [1] is the package index, first packet of the MSP
@@ -1081,7 +1088,7 @@ static void ExitBindingMode() // ELRS移植，注释源码另起修改
     // scanIndex = RATE_MAX;
     // RFmodeLastCycled = 0;
     // LockRFmode = false;
-    LostConnection(false);
+    LostConnection(true);
 
     // Do this last as LostConnection() will wait for a tock that never comes
     // if we're in binding mode
@@ -1097,6 +1104,7 @@ static void updateBindingMode(unsigned long now) // ELRS移植，注释源码另
     if (InBindingMode && UIDIsModified)
     // if (InBindingMode && config.IsModified())
     {
+        Serial.println("UID has been modified!");
         ExitBindingMode();
     }
 
