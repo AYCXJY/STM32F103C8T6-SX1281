@@ -1,2 +1,3 @@
-# <center>Lora
-STM32+Lora+ELRS通信部分的无线收发项目
+主控：STM32F103C8T6
+射频芯片：E2082G4M20S
+通信代码：移植ELRS
