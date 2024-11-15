@@ -31,7 +31,7 @@
 
 #include <Adafruit_SSD1306.h>
 #include "TimerInterrupt_Generic.h"
-
+#include "multi_button.h"
 /* ELRS variable */
 
 // #define MSP_PACKET_SEND_INTERVAL 10LU
@@ -103,7 +103,8 @@ uint16_t validSendFreq;
 uint16_t validReceiveCount;
 uint16_t validReceiveFreq;
 
-#define TIMER_INTERVAL_MS 100000
+#define TIMER_INTERVAL_MS 1000  // 1ms
+struct Button Bind;
 STM32Timer ITimer(TIM2);
 
 uint8_t CRCvalue;
@@ -853,81 +854,27 @@ static void setupBindingFromConfig() // ELRS移植，注释源码另起修改
 
 /* User Function */
 
-void displayDebugInfo()
-{
-    display.clearDisplay();
-    if (InBindingMode)
-    {
-        display.setCursor(0, 0);
-        display.println("sending UID...");
-    }
-    else
-    {
-        // UID
-        display.setCursor(0, 0);
-        display.println("ID");
-        display.setCursor(18, 0);
-        display.println(UID[2]);
-        display.setCursor(42, 0);
-        display.println(UID[3]);
-        display.setCursor(66, 0);
-        display.println(UID[4]);
-        display.setCursor(90, 0);
-        display.println(UID[5]);
-        // send freq
-        display.setCursor(0, 16);
-        display.println("Send");
-        display.setCursor(30, 16);
-        display.println(validSendFreq);
-        // full Send freq
-        display.setCursor(54, 16);
-        display.println("FullS");
-        display.setCursor(92, 16);
-        display.println(fullSfreq); 
-        // receive freq
-        display.setCursor(0, 24);
-        display.println("Recv");
-        display.setCursor(30, 24);
-        display.println(validReceiveFreq);  
-        // // full Recv freq
-        // display.setCursor(54, 24);
-        // display.println("FullR");
-        // display.setCursor(92, 24);
-        // display.println(fullRfreq);
-        display.setCursor(54, 24);     
-        display.println("RSSI");     
-        display.setCursor(84, 24);           
-        display.println(Radio.GetRssiInst(SX12XX_Radio_All)); 
-    }
-    // Freq
-    display.setCursor(0, 8);
-    display.println("FQ");
-    display.setCursor(18, 8);
-    display.println(Radio.currFreq);
-    // Channel
-    display.setCursor(76, 8);
-    display.println("CH");
-    display.setCursor(94, 8);
-    display.println(FHSSgetCurrIndex());
-    display.display();
-}
-
-void handleButtonPress(void)
-{
-    delay(25);
-    if (digitalRead(PB1) == 0)
-    {
-        while (digitalRead(PB1) == 0)
-            ;
-        delay(25);
-        EnterBindingMode();
-    }
-
-}
-
 void TimerHandler()
 {
   static uint16_t timercount = 0;
+
+  if(timercount % 5 == 0)
+  {
+    button_ticks();
+  }
+
+  if(timercount % 100 == 0)
+  {
+    if(connectionState == connected)
+    {
+      digitalWrite(PC13, LOW);
+    }
+    else
+    {
+      digitalToggle(PC13);
+    }
+  }
+
   if(timercount % (1000000 / TIMER_INTERVAL_MS) == 0)
   {
     validSendFreq = validSendCount;
@@ -943,15 +890,16 @@ void TimerHandler()
     // apInputBuffer.pushBytes(buf, sizeof(buf));
   }
   timercount++;
+}
 
-  if(connectionState == connected)
-  {
-    digitalWrite(PC13, LOW);
-  }
-  else
-  {
-    digitalToggle(PC13);
-  }
+uint8_t read_button_GPIO()
+{
+  return digitalRead(PB1);
+}
+
+void LONG_PRESS_Handler(void* btn)
+{
+  EnterBindingMode();
 }
 
 void setupBasicHardWare(void)
@@ -962,8 +910,9 @@ void setupBasicHardWare(void)
     pinMode(PC13, OUTPUT);
     digitalWrite(PC13, HIGH);
     // Button
-    pinMode(PB1, INPUT_PULLUP);
-    attachInterrupt(digitalPinToInterrupt(PB1), handleButtonPress, FALLING);
+    button_init(&Bind, read_button_GPIO, LOW, 0);
+    button_attach(&Bind, LONG_PRESS_START, LONG_PRESS_Handler);
+    button_start(&Bind);
     // OLED
     Wire.setSCL(PB8);
     Wire.setSDA(PB9);
@@ -979,7 +928,6 @@ void setupBasicHardWare(void)
     // TIM2
     ITimer.attachInterruptInterval(TIMER_INTERVAL_MS, TimerHandler);
 }
-
 
 /* setup and loop */
 

@@ -46,7 +46,7 @@
 
 #include <Adafruit_SSD1306.h>
 #include "TimerInterrupt_Generic.h"
-
+#include "multi_button.h"
 /* ELRS variable */
 
 // #define SEND_LINK_STATS_TO_FC_INTERVAL 100
@@ -136,7 +136,8 @@ uint16_t validReceiveFreq;
 
 uint8_t CRCvalue;
 
-#define TIMER_INTERVAL_MS 100000
+#define TIMER_INTERVAL_MS 1000  // 1ms
+struct Button Bind;
 STM32Timer ITimer(TIM2);
 
 bool UIDIsModified = false;
@@ -1210,86 +1211,27 @@ void EnterBindingModeSafely() // ELRS移植，注释源码另起修改
 
 /* User Function*/
 
-void displayDebugInfo()
-{
-    display.clearDisplay();  
-    if(InBindingMode)
-    {            
-        display.setCursor(0, 0);            
-        display.println("receiving UID...");
-    }
-    else
-    {
-        // UID          
-        display.setCursor(0, 0);           
-        display.println("ID");         
-        display.setCursor(18, 0);            
-        display.println(UID[2]);
-        display.setCursor(42, 0);            
-        display.println(UID[3]);
-        display.setCursor(66, 0);            
-        display.println(UID[4]);
-        display.setCursor(90, 0);            
-        display.println(UID[5]);  
-        // send freq
-        display.setCursor(0, 16);
-        display.println("Send");
-        display.setCursor(30, 16);
-        display.println(validSendFreq);
-        // full Send freq
-        display.setCursor(54, 16);
-        display.println("FullS");
-        display.setCursor(92, 16);
-        display.println(fullSfreq); 
-        // receive freq
-        display.setCursor(0, 24);
-        display.println("Recv");
-        display.setCursor(30, 24);
-        display.println(validReceiveFreq);  
-        // // full Recv freq
-        // display.setCursor(54, 24);
-        // display.println("FullR");
-        // display.setCursor(92, 24);
-        // display.println(fullRfreq);  
-    }
-    // // CRC
-    // display.setCursor(0, 16);
-    // display.println("CRC");
-    // display.setCursor(24, 16);
-    // display.println(CRCvalue);
-    // Freq
-    display.setCursor(0, 8);           
-    display.println("FQ");    
-    display.setCursor(18, 8);           
-    display.println(Radio.currFreq);  
-    // Channel
-    display.setCursor(76, 8);           
-    display.println("CH");  
-    display.setCursor(94, 8);           
-    display.println(FHSSgetCurrIndex());  
-    // RSSI
-    display.setCursor(54, 24);     
-    display.println("RSSI");     
-    display.setCursor(84, 24);           
-    display.println(Radio.GetRssiInst(SX12XX_Radio_All)); 
-    display.display();
-}
-
-void handleButtonPress() 
-{
-    delay(25);
-    if (digitalRead(PB1) == LOW)
-    {
-        while (digitalRead(PB1) == LOW)
-            ;
-        delay(25);
-        EnterBindingModeSafely();
-    }
-}
-
 void TimerHandler() 
 {  
     static uint16_t timercount = 0;
+
+    if(timercount % 5 == 0)
+    {
+        button_ticks();
+    }
+
+    if(timercount % 100 == 0)
+    {
+        if(connectionState != connected)
+        {
+            digitalToggle(PC13);
+        }
+        else
+        {
+            digitalWrite(PC13, LOW);
+        }
+    }
+
     if(timercount % (1000000 / TIMER_INTERVAL_MS) == 0)
     {
         validSendFreq = validSendCount;
@@ -1301,15 +1243,18 @@ void TimerHandler()
         fullRfreq = fullRcount;
         fullRcount = 0;
     }
-    if(connectionState != connected)
-    {
-        digitalToggle(PC13);
-    }
-    else
-    {
-        digitalWrite(PC13, LOW);
-    }
+
     timercount++;
+}
+
+uint8_t read_button_GPIO()
+{
+  return digitalRead(PB1);
+}
+
+void LONG_PRESS_Handler(void* btn)
+{
+  EnterBindingModeSafely();
 }
 
 void setupBasicHardWare()
@@ -1320,8 +1265,9 @@ void setupBasicHardWare()
     pinMode(PC13, OUTPUT);
     digitalWrite(PC13, HIGH);
     // Button
-    pinMode(PB1, INPUT_PULLUP);
-    attachInterrupt(digitalPinToInterrupt(PB1), handleButtonPress, FALLING);
+    button_init(&Bind, read_button_GPIO, LOW, 0);
+    button_attach(&Bind, LONG_PRESS_START, LONG_PRESS_Handler);
+    button_start(&Bind);
     // OLED
     Wire.setSCL(PB8);
     Wire.setSDA(PB9);
